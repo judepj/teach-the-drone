@@ -43,6 +43,8 @@
   .btns button:hover{background:#232d38;border-color:#3d4b58;}
   .btns button.primary{background:#274b45;border-color:#356;color:#bff0e6;}
   .btns button.primary:hover{background:#2f5a52;}
+  .btns button:disabled{opacity:.42;cursor:not-allowed;}
+  .btns button:disabled:hover{background:#1a222b;border-color:#2f3a45;}
 
   #switchRow{display:flex;align-items:center;gap:12px;margin:6px 0 12px;}
   #mlToggle{width:64px;height:32px;border-radius:18px;background:#3a2222;border:1px solid #5a3030;
@@ -65,6 +67,10 @@
   #regStatus{margin-top:7px;font-size:14px;font-weight:800;letter-spacing:.4px;color:#5ad18a;}
 
   #tip{position:fixed;right:18px;bottom:14px;font-size:12px;color:#6d7887;z-index:10;pointer-events:none;}
+  #muteBtn{position:fixed;top:16px;right:16px;z-index:12;width:34px;height:34px;border-radius:9px;
+    border:1px solid #2f3a45;background:rgba(18,23,30,0.82);color:#bff0e6;font-size:16px;cursor:pointer;
+    backdrop-filter:blur(6px);line-height:1;padding:0;transition:.12s;}
+  #muteBtn:hover{border-color:#3d4b58;background:rgba(30,38,48,0.9);}
   #err{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
     max-width:80%;text-align:center;font-size:15px;color:#c9d3de;display:none;}
 </style>
@@ -75,6 +81,8 @@
   <h1>Teach the drone</h1>
   <div id="tabs">
     <button id="tabReg" class="on">Regression</button>
+    <button id="tabMission">Mission A&rarr;B</button>
+    <button id="tabPredict">Predict the crash</button>
     <button id="tabStab">Stabilize · ML on/off</button>
   </div>
   <div id="step"></div>
@@ -128,6 +136,71 @@
   </div>
 </div>
 
+<!-- MISSION panel : Game 1 — fit the model, then fly cargo A->B -->
+<div id="panelMission" class="panel" style="display:none;">
+  <div class="row">
+    <label>slope&nbsp;m</label>
+    <input id="mmSlider" type="range" min="0.03" max="0.14" step="0.001" value="0.050">
+    <span class="val slope" id="mmVal">0.050</span>
+  </div>
+  <div class="row">
+    <label>start&nbsp;c</label>
+    <input id="mcSlider" type="range" min="35" max="58" step="0.5" value="55">
+    <span class="val start" id="mcVal">55.0</span>
+  </div>
+  <div class="meterWrap">
+    <div class="lbl"><span>fit error (green unlocks launch)</span><b id="missErrNum">–</b></div>
+    <div class="meterBar"><div class="meterFill" id="missFill"></div></div>
+  </div>
+  <div style="display:flex;gap:12px;align-items:center;margin:10px 0 2px;">
+    <div style="text-align:center;flex:none;">
+      <canvas id="bowl" width="150" height="118" style="display:block;border-radius:8px;background:#0b0f14;"></canvas>
+      <div style="font-size:10px;color:#9aa6b3;margin-top:3px;letter-spacing:.4px;">loss surface E(m,c)</div>
+    </div>
+    <div style="flex:1;font-size:12px;color:#c3cdd8;line-height:1.5;">
+      cargo <b>430&nbsp;g</b> · predicted current <b id="missPred">–</b>&nbsp;A<br>
+      the rings are the error; steer the marker into the <span style="color:#5ad18a">green basin</span>.
+    </div>
+  </div>
+  <div class="meterWrap" style="margin-top:8px;">
+    <div class="lbl"><span>battery</span><b id="battNum">100%</b></div>
+    <div class="meterBar" style="height:12px;"><div class="meterFill" id="battFill" style="background:#5ad18a;"></div></div>
+  </div>
+  <div class="lbl" style="display:flex;justify-content:space-between;font-size:12px;color:#9aa6b3;margin-top:6px;">
+    <span>motor current</span><b id="missCur" style="color:#e7edf4;">– A</b>
+  </div>
+  <div id="missNote" class="note"></div>
+  <div id="missStatus" style="margin-top:7px;font-size:14px;font-weight:800;letter-spacing:.4px;color:#9aa6b3;">READY ON PAD A</div>
+  <div class="btns">
+    <button id="launchBtn" class="primary" disabled>🚀 Launch</button>
+    <button id="missResetBtn">Reset to A</button>
+  </div>
+</div>
+
+<!-- PREDICT panel : Game 2 — classify past takeoffs, then forecast a new one -->
+<div id="panelPredict" class="panel" style="display:none;">
+  <div class="row">
+    <label>bnd&nbsp;slope</label>
+    <input id="pbmSlider" type="range" min="-2.2" max="0.4" step="0.02" value="-0.90">
+    <span class="val slope" id="pbmVal">-0.90</span>
+  </div>
+  <div class="row">
+    <label>bnd&nbsp;offset</label>
+    <input id="pbcSlider" type="range" min="6" max="32" step="0.5" value="17">
+    <span class="val start" id="pbcVal">17.0</span>
+  </div>
+  <div class="meterWrap">
+    <div class="lbl"><span>accuracy on past takeoffs</span><b id="predAccNum">–</b></div>
+    <div class="meterBar"><div class="meterFill" id="predFill"></div></div>
+  </div>
+  <div id="predNote" class="note"></div>
+  <div id="predStatus" style="margin-top:7px;font-size:14px;font-weight:800;letter-spacing:.4px;color:#9aa6b3;">SCORE 0 / 0</div>
+  <div class="btns">
+    <button id="takeoffBtn" class="primary">🎲 New takeoff</button>
+    <button id="predFitBtn">Show the machine's boundary</button>
+  </div>
+</div>
+
 <div id="chartWrap">
   <p id="chartCap">payload (g)  →  hover throttle (%)</p>
   <canvas id="chart" width="380" height="276"></canvas>
@@ -137,6 +210,7 @@
   </div>
 </div>
 
+<button id="muteBtn" title="sound on">🔊</button>
 <div id="tip">Drag the 3D scene to orbit · scroll to zoom</div>
 <div id="err">Couldn&rsquo;t load the 3D library (needs internet the first time).<br>
   The controls on the left still teach the ML idea.</div>
@@ -168,7 +242,131 @@ let STAB=true, roll=0, rollVel=0, crashed=false, crashT=0, slideX=0;
 const tiltBuf=[]; const TILT_N=150;
 
 // ---- shared instrument state (tachometer / physics / wind) ----------------
-let regDrop=0, windLevel=0, tachRPM=3000, curThrottle=45, windCleared=false;
+let regDrop=0, windLevel=0, tachRPM=3000, curThrottle=45, windCleared=false, regWasCrashing=false;
+
+// ---- MISSION (Game 1: A->B) : own model state — never touches Regression's M/C ----
+let mM=0.050, mC=55;                       // mission-scoped slope/start (independent sliders)
+const MISS_MW=430;                         // fixed heavy cargo (g): BEYOND the 290 g tested => extrapolation
+const MISS_REQ=BEST.m*MISS_MW+BEST.c;      // hidden true current the cargo actually needs (~82.6)
+// Flight constants. Difficulty is a visual judgment (see plan) — tune freely.
+//  under-model (line too low => applied < Wg) can't lift => stays green-locked on pad A;
+//  a good fit lifts with margin and lands on B; a higher line burns more current (idle floor) => thinner battery.
+const MISS={ GRAV:0.90, KA:0.05, HACC:3.0, HDRAG:1.1, IDLE:0.80, DRAIN:0.11,
+             ALT:2.2, XA:-7.0, XB:7.0, VHARD:2.8, TGREEN:2.2, BATT0:100,
+             GROUNDY:-2.45, ORIGIN0:-1.49 };
+let missPhase='tune';                      // 'tune' | 'flying' | 'won' | 'lost'
+let missApplied=0, missWg=MISS_REQ*MISS.GRAV;   // locked at LAUNCH
+let missX=MISS.XA, missY=0, missVX=0, missVY=0, missTau=0, missBatt=MISS.BATT0, missFlown=false, missCurrent=0;
+const missKeys={up:false,left:false,right:false};
+
+// ---- PREDICT (Game 2: classify) : own boundary state — never touches Regression's M/C ----
+// Two visible weather variables: wind speed (kt) and rain intensity (mm/h).
+// Hidden linear crash rule: crash when a*wind + b*rain > k (near-margin point adds noise flavour).
+const PRED_A=0.8, PRED_B=1.0, PRED_K=24;
+const trueCrashP=(w,r)=> (PRED_A*w+PRED_B*r) > PRED_K;
+const PWMAX=25, PRMAX=30;                          // plot/sample ranges
+const PPTS=[
+  {w:2,r:6},{w:4,r:26},{w:6,r:10},{w:8,r:22},{w:10,r:8},{w:12,r:20},{w:14,r:6},
+  {w:15,r:18},{w:17,r:4},{w:18,r:14},{w:20,r:3},{w:22,r:12},{w:9,r:17},{w:24,r:2}
+].map(d=>({...d, crash: trueCrashP(d.w,d.r)}));
+// Student boundary in (wind,rain): predict CRASH when rain > pBM*wind + pBC (own slope/offset).
+let pBM=-0.90, pBC=17;
+const PBM_BEST=-PRED_A/PRED_B, PBC_BEST=PRED_K/PRED_B;   // hidden rule as rain = m*wind + c  (=-0.8, 24)
+let predPhase='tune';                              // 'tune' | 'flying'
+let predWind=0, predRain=0;                         // live conditions shown in the scene (0..1)
+let predPt=null, predForecast=null, predTruth=null; // current takeoff + model forecast + reality
+let predScore=0, predTotal=0, predScored=false;
+let predAnim='idle', predAnimT=0, predAnimReq=null, predRoll=0, predRollVel=0;
+
+// ===========================================================================
+//  SOUND  (Web Audio API — procedural, self-contained; no audio files)
+//  Motor hum + over-throttle strain track tachRPM in every mode; weather
+//  whoosh/hiss in Predict; one-shot crash thud & success chime. Master gain
+//  is low/subtle and fully gated by the mute toggle. Degrades silently if the
+//  AudioContext is unavailable and never throws into the render loop.
+// ===========================================================================
+const Sound=(function(){
+  const MASTER=0.38;                 // keep it subtle
+  let ctx=null, master=null, ready=false, muted=false, battAcc=0;
+  let humOsc=null, humGain=null, strainOsc=null, strainGain=null;
+  let windGain=null, hissGain=null;
+  try{ muted = (localStorage.getItem('dg_muted')==='1'); }catch(e){}
+  function noiseBuffer(sec){
+    const len=Math.floor(ctx.sampleRate*sec), b=ctx.createBuffer(1,len,ctx.sampleRate), d=b.getChannelData(0);
+    for(let i=0;i<len;i++)d[i]=Math.random()*2-1; return b;
+  }
+  function ensure(){
+    if(ready){ if(ctx&&ctx.state==='suspended')ctx.resume(); return; }
+    const AC=window.AudioContext||window.webkitAudioContext; if(!AC)return;
+    try{
+      ctx=new AC();
+      master=ctx.createGain(); master.gain.value=muted?0:MASTER; master.connect(ctx.destination);
+      // motor hum: filtered sawtooth
+      humGain=ctx.createGain(); humGain.gain.value=0; humGain.connect(master);
+      const humLP=ctx.createBiquadFilter(); humLP.type='lowpass'; humLP.frequency.value=620; humLP.Q.value=0.6;
+      humOsc=ctx.createOscillator(); humOsc.type='sawtooth'; humOsc.frequency.value=70;
+      humOsc.connect(humLP); humLP.connect(humGain); humOsc.start();
+      // over-throttle strain: a slightly detuned partner => audible beat when maxed
+      strainGain=ctx.createGain(); strainGain.gain.value=0; strainGain.connect(master);
+      strainOsc=ctx.createOscillator(); strainOsc.type='sawtooth'; strainOsc.frequency.value=72;
+      strainOsc.connect(strainGain); strainOsc.start();
+      // weather (Predict): looping noise -> whoosh (bandpass) + hiss (highpass)
+      const nb=noiseBuffer(2);
+      const windSrc=ctx.createBufferSource(); windSrc.buffer=nb; windSrc.loop=true;
+      const windBP=ctx.createBiquadFilter(); windBP.type='bandpass'; windBP.frequency.value=430; windBP.Q.value=0.7;
+      windGain=ctx.createGain(); windGain.gain.value=0;
+      windSrc.connect(windBP); windBP.connect(windGain); windGain.connect(master); windSrc.start();
+      const hissSrc=ctx.createBufferSource(); hissSrc.buffer=nb; hissSrc.loop=true;
+      const hissHP=ctx.createBiquadFilter(); hissHP.type='highpass'; hissHP.frequency.value=2700;
+      hissGain=ctx.createGain(); hissGain.gain.value=0;
+      hissSrc.connect(hissHP); hissHP.connect(hissGain); hissGain.connect(master); hissSrc.start();
+      ready=true;
+    }catch(e){ ctx=null; ready=false; }
+  }
+  function setMute(m){ muted=!!m; try{localStorage.setItem('dg_muted',muted?'1':'0');}catch(e){}
+    if(ready&&master){ try{ master.gain.setTargetAtTime(muted?0:MASTER, ctx.currentTime, 0.05); }catch(e){} } }
+  function isMuted(){ return muted; }
+  function beep(freq,dur,vol){ if(!ready||muted)return; try{
+    const o=ctx.createOscillator(), g=ctx.createGain(), t0=ctx.currentTime;
+    o.type='sine'; o.frequency.value=freq;
+    g.gain.setValueAtTime(0.0001,t0); g.gain.linearRampToValueAtTime(vol,t0+0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+    o.connect(g); g.connect(master); o.start(t0); o.stop(t0+dur+0.03);
+  }catch(e){} }
+  function chime(){ if(!ready||muted)return; beep(660,0.16,0.26); setTimeout(()=>beep(990,0.34,0.24),150); }
+  function crash(){ if(!ready||muted)return; try{
+    const src=ctx.createBufferSource(), len=Math.floor(ctx.sampleRate*0.55), b=ctx.createBuffer(1,len,ctx.sampleRate), d=b.getChannelData(0);
+    for(let i=0;i<len;i++){ const e=1-i/len; d[i]=(Math.random()*2-1)*e*e; }   // decaying noise
+    src.buffer=b;
+    const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=340;
+    const g=ctx.createGain(); g.gain.value=0.85;
+    src.connect(lp); lp.connect(g); g.connect(master); src.start();
+  }catch(e){} }
+  function update(dt){
+    if(!ready)return; const now=ctx.currentTime;
+    const rpm=(typeof tachRPM==='number')?tachRPM:0, frac=Math.max(0,Math.min(1,rpm/9000));
+    const f=55+frac*135;                                       // motor pitch tracks RPM
+    try{
+      humOsc.frequency.setTargetAtTime(f, now, 0.08);
+      humGain.gain.setTargetAtTime(0.02+frac*0.13, now, 0.08);
+      const strain=Math.max(0,Math.min(1,(rpm-7600)/1400));    // near/over redline => strain beat
+      strainOsc.frequency.setTargetAtTime(f*1.015+3.5, now, 0.08);
+      strainGain.gain.setTargetAtTime(strain*0.09, now, 0.08);
+      const inPred=(typeof MODE!=='undefined'&&MODE==='predict');
+      const wl=(inPred&&typeof predWind==='number')?predWind:0;
+      const rl=(inPred&&typeof predRain==='number')?predRain:0;
+      windGain.gain.setTargetAtTime(wl*0.10, now, 0.15);
+      hissGain.gain.setTargetAtTime(rl*0.055, now, 0.15);
+    }catch(e){}
+    // slow low-battery beeps in Mission — cadence quickens as the bar empties
+    const lowBatt=(typeof MODE!=='undefined'&&MODE==='mission'&&typeof missPhase!=='undefined'&&missPhase==='flying'
+      &&typeof missBatt==='number'&&missBatt>0&&missBatt<25);
+    if(lowBatt){ battAcc+=dt; const interval=0.4+(missBatt/25)*1.1;
+      if(battAcc>=interval){ battAcc=0; beep(880,0.09,0.15); } }
+    else battAcc=0;
+  }
+  return {ensure,setMute,isMuted,crash,chime,update};
+})();
 
 // ===========================================================================
 //  CHART  (one canvas, three drawers)
@@ -212,7 +410,79 @@ function drawTilt(){
   for(let i=0;i<tiltBuf.length;i++){const x=i/(TILT_N-1)*CW,y=toY(Math.max(-span,Math.min(span,tiltBuf[i])));i?cx.lineTo(x,y):cx.moveTo(x,y);}
   cx.stroke();
 }
-function drawChart(){ MODE==='reg'?drawReg():drawTilt(); }
+// -- mission fit chart (reuses reg axes/helpers; mission-scoped mM,mC; heavy cargo at 430) --
+function drawMissChart(){
+  cx.clearRect(0,0,CW,CH);
+  cx.strokeStyle='#232c36';cx.lineWidth=1;cx.fillStyle='#6d7887';cx.font='10px Helvetica Neue';
+  cx.textAlign='right';cx.textBaseline='middle';
+  for(let y=40;y<=90;y+=10){const Y=rpy(y);cx.beginPath();cx.moveTo(PAD_L,Y);cx.lineTo(CW-PAD_R,Y);cx.stroke();cx.fillText(y,PAD_L-5,Y);}
+  cx.textAlign='center';cx.textBaseline='top';
+  for(let p=0;p<=450;p+=150)cx.fillText(p,rpx(p),CH-PAD_B+5);
+  cx.fillStyle='rgba(224,138,75,0.06)';cx.fillRect(rpx(P_MAX_TESTED),PAD_T,CW-PAD_R-rpx(P_MAX_TESTED),CH-PAD_T-PAD_B);
+  cx.fillStyle='#6d7887';cx.font='9px Helvetica Neue';cx.textAlign='left';cx.fillText('untested',rpx(P_MAX_TESTED)+3,PAD_T+2);
+  cx.strokeStyle='#e08a4b';cx.lineWidth=2;cx.beginPath();
+  cx.moveTo(rpx(0),rpy(Math.min(Y1,Math.max(Y0,mC))));cx.lineTo(rpx(450),rpy(Math.min(Y1,Math.max(Y0,mM*450+mC))));cx.stroke();
+  DATA.forEach(dp=>{cx.strokeStyle='rgba(154,166,179,0.45)';cx.lineWidth=1;
+    cx.beginPath();cx.moveTo(rpx(dp.p),rpy(dp.y));cx.lineTo(rpx(dp.p),rpy(mM*dp.p+mC));cx.stroke();
+    cx.fillStyle='#7fd1c9';cx.beginPath();cx.arc(rpx(dp.p),rpy(dp.y),3.6,0,7);cx.fill();});
+  const ap=mM*MISS_MW+mC, apc=Math.min(Y1,Math.max(Y0,ap));   // cargo current prediction (blue)
+  cx.setLineDash([3,3]);cx.strokeStyle='#5aa9e6';cx.lineWidth=1.4;
+  cx.beginPath();cx.moveTo(rpx(MISS_MW),CH-PAD_B);cx.lineTo(rpx(MISS_MW),rpy(apc));cx.stroke();cx.setLineDash([]);
+  cx.fillStyle='#5aa9e6';cx.beginPath();cx.arc(rpx(MISS_MW),rpy(apc),4,0,7);cx.fill();
+}
+// -- predict scatter : (wind kt, rain mm/h) with region tint + boundary + points --
+const ppx=w=>PAD_L+(w/PWMAX)*(CW-PAD_L-PAD_R);
+const ppy=r=>CH-PAD_B-(r/PRMAX)*(CH-PAD_T-PAD_B);
+function predAccuracy(){ let ok=0; PPTS.forEach(d=>{ if((d.r>pBM*d.w+pBC)===d.crash)ok++; }); return ok; }
+function drawPredict(){
+  cx.clearRect(0,0,CW,CH);
+  const rL=Math.max(0,Math.min(PRMAX,pBC)), rR=Math.max(0,Math.min(PRMAX,pBM*PWMAX+pBC));
+  cx.fillStyle='rgba(255,106,76,0.09)';                    // above line = predicted CRASH (red)
+  cx.beginPath();cx.moveTo(ppx(0),PAD_T);cx.lineTo(ppx(PWMAX),PAD_T);
+  cx.lineTo(ppx(PWMAX),ppy(rR));cx.lineTo(ppx(0),ppy(rL));cx.closePath();cx.fill();
+  cx.fillStyle='rgba(90,209,138,0.08)';                    // below line = predicted SAFE (green)
+  cx.beginPath();cx.moveTo(ppx(0),CH-PAD_B);cx.lineTo(ppx(PWMAX),CH-PAD_B);
+  cx.lineTo(ppx(PWMAX),ppy(rR));cx.lineTo(ppx(0),ppy(rL));cx.closePath();cx.fill();
+  cx.fillStyle='#6d7887';cx.font='10px Helvetica Neue';cx.textAlign='right';cx.textBaseline='middle';
+  for(let r=0;r<=PRMAX;r+=10)cx.fillText(r,PAD_L-5,ppy(r));
+  cx.textAlign='center';cx.textBaseline='top';
+  for(let w=0;w<=PWMAX;w+=5)cx.fillText(w,ppx(w),CH-PAD_B+5);
+  cx.strokeStyle='#e08a4b';cx.lineWidth=2;cx.beginPath();cx.moveTo(ppx(0),ppy(rL));cx.lineTo(ppx(PWMAX),ppy(rR));cx.stroke();
+  PPTS.forEach(d=>{const X=ppx(d.w),Y=ppy(d.r),wrong=((d.r>pBM*d.w+pBC)!==d.crash);
+    cx.fillStyle=d.crash?'#ff6a4c':'#5ad18a';cx.beginPath();cx.arc(X,Y,4,0,7);cx.fill();
+    if(wrong){cx.strokeStyle='#e7edf4';cx.lineWidth=1.6;cx.beginPath();cx.arc(X,Y,6.5,0,7);cx.stroke();}});
+  if(predPt){const X=ppx(predPt.w),Y=ppy(predPt.r);
+    cx.fillStyle=predForecast==='crash'?'#ff6a4c':'#5ad18a';cx.strokeStyle='#e7edf4';cx.lineWidth=2;
+    cx.beginPath();cx.arc(X,Y,6,0,7);cx.fill();cx.stroke();
+    cx.fillStyle='#e7edf4';cx.font='9px Helvetica Neue';cx.textAlign='center';cx.textBaseline='bottom';cx.fillText('now',X,Y-8);}
+}
+function drawChart(){ if(MODE==='reg')drawReg(); else if(MODE==='mission')drawMissChart(); else if(MODE==='predict')drawPredict(); else drawTilt(); }
+
+// -- loss-surface bowl : top-down E(m,c) with concentric rings + current-(m,c) marker --
+const bw=document.getElementById('bowl'), bcx=bw&&bw.getContext('2d');
+const BOWL_M0=0.03,BOWL_M1=0.14,BOWL_C0=35,BOWL_C1=58;
+function drawBowl(){
+  if(!bcx)return;
+  const W=bw.width,H=bw.height,img=bcx.createImageData(W,H),d=img.data;
+  const green=fitError(mM,mC)<MISS.TGREEN;
+  for(let py=0;py<H;py++){
+    const c=BOWL_C1-(py/(H-1))*(BOWL_C1-BOWL_C0);          // top = high c
+    for(let px=0;px<W;px++){
+      const m=BOWL_M0+(px/(W-1))*(BOWL_M1-BOWL_M0);
+      const e=fitError(m,c), ripple=0.5+0.5*Math.cos(e*1.15);   // rings
+      let r,g,b;
+      if(e<MISS.TGREEN){ r=26+ripple*22; g=118+ripple*95; b=88+ripple*44; }   // green basin
+      else { const tt=Math.max(0,Math.min(1,(e-MISS.TGREEN)/8));
+        r=22+tt*30+ripple*16; g=40+ripple*20; b=62+(1-tt)*34+ripple*16; }
+      const i=(py*W+px)*4; d[i]=r; d[i+1]=g; d[i+2]=b; d[i+3]=255;
+    }
+  }
+  bcx.putImageData(img,0,0);
+  const mx=(mM-BOWL_M0)/(BOWL_M1-BOWL_M0)*W, my=(1-(mC-BOWL_C0)/(BOWL_C1-BOWL_C0))*H;
+  bcx.fillStyle=green?'#5ad18a':'#5aa9e6';
+  bcx.strokeStyle=green?'#bff0e6':'#0b0f14';bcx.lineWidth=2;
+  bcx.beginPath();bcx.arc(mx,my,5,0,7);bcx.fill();bcx.stroke();
+}
 
 // -- RPM tachometer (car-dashboard style, top semicircle, redline near top) --
 const tv=document.getElementById('tach'), tcx=tv.getContext('2d'), TW=tv.width, TH=tv.height;
@@ -240,18 +510,47 @@ drawTach(3000);
 const windCv=document.getElementById('windfx'), wcx=windCv.getContext('2d');
 function sizeWind(){windCv.width=innerWidth;windCv.height=innerHeight;}
 sizeWind();addEventListener('resize',sizeWind);
-let windParts=[];
-function drawWind(){
-  if(MODE!=='stab'||windLevel<=0){ if(!windCleared){wcx.clearRect(0,0,windCv.width,windCv.height);windCleared=true;} return; }
+let windParts=[], rainParts=[];
+function drawWindStreaks(level){   // horizontal wind streaks (Stabilize) — blows to the right
+  if(level<=0){ if(!windCleared){wcx.clearRect(0,0,windCv.width,windCv.height);windCleared=true;} return; }
   windCleared=false;
-  const n=Math.round(windLevel*70);
+  const n=Math.round(level*70);
   while(windParts.length<n)windParts.push({x:Math.random()*windCv.width,y:Math.random()*windCv.height,len:24+Math.random()*46,v:0.7+Math.random()*0.8});
   if(windParts.length>n)windParts.length=n;
   wcx.clearRect(0,0,windCv.width,windCv.height);
-  const speed=2+windLevel*11;
+  const speed=2+level*11;
   wcx.strokeStyle='rgba(130,175,205,0.22)';wcx.lineWidth=1.4;
   for(const p of windParts){ p.x+=speed*p.v; if(p.x-p.len>windCv.width){p.x=-p.len;p.y=Math.random()*windCv.height;}
-    wcx.beginPath();wcx.moveTo(p.x,p.y);wcx.lineTo(p.x-p.len,p.y);wcx.stroke(); }   // blows to the right
+    wcx.beginPath();wcx.moveTo(p.x,p.y);wcx.lineTo(p.x-p.len,p.y);wcx.stroke(); }
+}
+function drawWeather(wl,rl){   // Predict: wind streaks (scaled by wl) + downward rain streaks (scaled by rl)
+  if(wl<=0&&rl<=0){ if(!windCleared){wcx.clearRect(0,0,windCv.width,windCv.height);windCleared=true;} return; }
+  windCleared=false;
+  const W=windCv.width, H=windCv.height; wcx.clearRect(0,0,W,H);
+  if(wl>0){
+    const n=Math.round(wl*60);
+    while(windParts.length<n)windParts.push({x:Math.random()*W,y:Math.random()*H,len:24+Math.random()*46,v:0.7+Math.random()*0.8});
+    if(windParts.length>n)windParts.length=n;
+    const speed=2+wl*11;
+    wcx.strokeStyle='rgba(130,175,205,0.20)';wcx.lineWidth=1.4;
+    for(const p of windParts){ p.x+=speed*p.v; if(p.x-p.len>W){p.x=-p.len;p.y=Math.random()*H;}
+      wcx.beginPath();wcx.moveTo(p.x,p.y);wcx.lineTo(p.x-p.len,p.y);wcx.stroke(); }
+  } else windParts.length=0;
+  if(rl>0){
+    const rn=Math.round(rl*170);
+    while(rainParts.length<rn)rainParts.push({x:Math.random()*W,y:Math.random()*H,len:11+Math.random()*15,v:0.85+Math.random()*0.5});
+    if(rainParts.length>rn)rainParts.length=rn;
+    const vspeed=10+rl*18, drift=6+wl*10;
+    wcx.strokeStyle='rgba(140,165,200,0.34)';wcx.lineWidth=1.1;   // cool decorative rain (not the teaching blue)
+    for(const p of rainParts){ p.y+=vspeed*p.v; p.x+=drift*0.12;
+      if(p.y-p.len>H){p.y=-p.len;p.x=Math.random()*W-40;}
+      wcx.beginPath();wcx.moveTo(p.x,p.y);wcx.lineTo(p.x-drift*0.18,p.y-p.len);wcx.stroke(); }
+  } else rainParts.length=0;
+}
+function drawWind(){   // dispatcher: keeps windfx canvas correct per mode
+  if(MODE==='stab'){ drawWindStreaks(windLevel); return; }
+  if(MODE==='predict'){ drawWeather(predWind,predRain); return; }
+  if(!windCleared){wcx.clearRect(0,0,windCv.width,windCv.height);windCleared=true;}
 }
 
 // ===========================================================================
@@ -266,6 +565,14 @@ const STEP_REG='Every extra gram needs more throttle to hover. You have <b>7 tes
 const STEP_STAB='A drone can\'t stay level on its own. Turn the <b>ML stabilizer</b> off, hit a '+
   '<b>gust</b>, watch it tumble. Turn it on: it senses tilt and corrects 60×/second. That '+
   '<b>sense → correct</b> rule is what a model learns.';
+const STEP_MISS='<b>Mission:</b> your line predicts the <b>current</b> a cargo needs. Fit the '+
+  '<b>7 bench flights</b> until the bowl goes <b>green</b>, then <b>LAUNCH</b> and hand-fly the '+
+  '430&nbsp;g crate from pad&nbsp;A to pad&nbsp;B. Hold <b>Up/Space</b> to climb, <b>←/→</b> to move. '+
+  'A weak line can\'t lift; a greedy line drains the battery before B.';
+const STEP_PRED='<b>Predict a category:</b> will a takeoff <b>survive</b> or <b>crash</b>? Each dot is '+
+  'a past autonomous flight — <b>green safe, red crash</b> — set by wind &amp; rain. Drag the '+
+  '<b>boundary</b> to split the colours, then hit <b>New takeoff</b>: your model forecasts the '+
+  'outcome and the drone <b>flies itself</b> to prove it. A good boundary = reliable forecasts.';
 
 // regression wiring
 const mS=$('mSlider'),cS=$('cSlider'),pS=$('pSlider');
@@ -304,21 +611,153 @@ $('gustBtn').onclick=()=>{rollVel+=(Math.random()<0.5?-1:1)*(1.6+Math.random()*0
 $('calmBtn').onclick=()=>{roll=0;rollVel=0;crashed=false;slideX=0;tiltBuf.length=0;};
 $('windSlider').oninput=e=>{windLevel=+e.target.value;$('windVal').textContent=windLevel<=0?'calm':Math.round(windLevel*100)+'%';};
 
+// mission wiring (Game 1) — all mission-scoped, reuses fitError/BEST helpers only
+const mmS=$('mmSlider'),mcS=$('mcSlider');
+function refreshMiss(){
+  $('mmVal').textContent=mM.toFixed(3);$('mcVal').textContent=mC.toFixed(1);
+  const e=fitError(mM,mC), green=e<MISS.TGREEN;
+  $('missErrNum').textContent=e.toFixed(2)+' %';
+  const good=Math.max(0,Math.min(1,1-(e-1.4)/9));
+  $('missFill').style.width=(good*100).toFixed(0)+'%';
+  $('missFill').style.background= green?'#5ad18a':`hsl(${good*90},70%,50%)`;
+  const ap=mM*MISS_MW+mC; $('missPred').textContent=ap.toFixed(1);
+  if(missPhase==='tune') $('launchBtn').disabled=!green;
+  if(green) $('missNote').innerHTML=`<b>Green — good fit.</b> Line predicts <b>${ap.toFixed(0)} A</b> for the ${MISS_MW} g cargo. Hit <b>LAUNCH</b>, then <b>Up/Space</b> to climb and <b>→</b> for pad B.`;
+  else $('missNote').innerHTML=`Drag <b>slope</b> and <b>start</b> until the line runs through the <b>${DATA.length} dots</b> and the bowl turns <span style="color:#5ad18a">green</span>. Launch stays locked until then.`;
+  drawBowl();
+  if(MODE==='mission'&&missPhase!=='flying')drawChart();
+}
+function updateMissHUD(){
+  const pct=Math.max(0,Math.min(100,missBatt));
+  const bf=$('battFill'); bf.style.width=pct.toFixed(0)+'%';
+  bf.style.background= pct>40?'#5ad18a':(pct>15?'#e0a24b':'#ff6a4c');
+  $('battNum').textContent=pct.toFixed(0)+'%';
+  $('missCur').textContent=(missPhase==='flying'?missCurrent:0).toFixed(0)+' A';
+  const st=$('missStatus');
+  if(missPhase==='flying'){st.textContent='EN ROUTE TO B';st.style.color='#5aa9e6';}
+  else if(missPhase==='won'){st.textContent='✅ DELIVERED TO B';st.style.color='#5ad18a';}
+  else if(missPhase==='lost'){st.textContent='💥 MISSION FAILED';st.style.color='#ff6a4c';}
+  else{st.textContent='READY ON PAD A';st.style.color='#9aa6b3';}
+}
+mmS.oninput=e=>{mM=+e.target.value; if(missPhase!=='flying')refreshMiss();};
+mcS.oninput=e=>{mC=+e.target.value; if(missPhase!=='flying')refreshMiss();};
+// keyboard: mission flying only (references are stable so add/remove pair cleanly)
+function missKeyDown(e){const k=e.key;
+  if(k==='ArrowUp'||k===' '||k==='Spacebar'){missKeys.up=true;e.preventDefault();}
+  else if(k==='ArrowLeft'){missKeys.left=true;e.preventDefault();}
+  else if(k==='ArrowRight'){missKeys.right=true;e.preventDefault();}}
+function missKeyUp(e){const k=e.key;
+  if(k==='ArrowUp'||k===' '||k==='Spacebar')missKeys.up=false;
+  else if(k==='ArrowLeft')missKeys.left=false;
+  else if(k==='ArrowRight')missKeys.right=false;}
+function addMissKeys(){addEventListener('keydown',missKeyDown);addEventListener('keyup',missKeyUp);}
+function removeMissKeys(){removeEventListener('keydown',missKeyDown);removeEventListener('keyup',missKeyUp);
+  missKeys.up=missKeys.left=missKeys.right=false;}
+function missResetToTune(){
+  missPhase='tune';missX=MISS.XA;missY=0;missVX=0;missVY=0;missTau=0;missBatt=MISS.BATT0;missFlown=false;missCurrent=0;
+  removeMissKeys(); mmS.disabled=false;mcS.disabled=false;
+  refreshMiss();updateMissHUD();
+}
+$('missResetBtn').onclick=()=>{missResetToTune();verdict.textContent='';};
+$('launchBtn').onclick=()=>{
+  if(missPhase!=='tune'||fitError(mM,mC)>=MISS.TGREEN)return;
+  missApplied=mM*MISS_MW+mC; missWg=MISS_REQ*MISS.GRAV;
+  missPhase='flying'; missX=MISS.XA;missY=0;missVX=0;missVY=0;missTau=0;missBatt=MISS.BATT0;missFlown=false;
+  mmS.disabled=true;mcS.disabled=true; $('launchBtn').disabled=true;
+  if(window._missionView)window._missionView(true);   // snap back to a clean side view
+  addMissKeys(); verdict.textContent='';
+};
+
+// predict wiring (Game 2) — all predict-scoped, reuses only the tab/panel pattern
+const pbmS=$('pbmSlider'),pbcS=$('pbcSlider');
+function updatePredHUD(){
+  const st=$('predStatus');
+  if(predPhase==='flying'){st.textContent='AUTONOMOUS TAKEOFF…';st.style.color='#5aa9e6';}
+  else{st.textContent=`SCORE ${predScore} / ${predTotal}`;
+    st.style.color=(predTotal>0&&predScore===predTotal)?'#5ad18a':'#9aa6b3';}
+  $('takeoffBtn').disabled=(predPhase==='flying');
+}
+function refreshPredict(){
+  $('pbmVal').textContent=pBM.toFixed(2);$('pbcVal').textContent=pBC.toFixed(1);
+  const ok=predAccuracy(), frac=ok/PPTS.length;
+  $('predAccNum').textContent=`${ok} / ${PPTS.length}`;
+  $('predFill').style.width=(frac*100).toFixed(0)+'%';
+  $('predFill').style.background=`hsl(${frac*130},70%,50%)`;
+  if(predPhase!=='flying'){
+    if(ok===PPTS.length){verdict.style.color='#5ad18a';verdict.textContent='🎯 Every past takeoff on the right side. That boundary is your classifier.';}
+    else if(frac>=0.8){verdict.style.color='#e0c14b';verdict.textContent=`${PPTS.length-ok} misclassified (ringed). Tilt the boundary to fix them.`;}
+    else{verdict.style.color='#e0784b';verdict.textContent='The line cuts through both colours. Keep adjusting.';}
+    if(predPt){const correct=((predForecast==='crash')===predTruth);
+      $('predNote').innerHTML=`Last takeoff — wind <b>${predPt.w.toFixed(0)} kt</b>, rain <b>${predPt.r.toFixed(0)} mm/h</b>: `+
+        `you forecast <b>${predForecast==='crash'?'<span class="warn">CRASH</span>':'SAFE'}</b>, reality `+
+        `<b>${predTruth?'crashed':'flew safely'}</b> <span style="color:#6d7887">(${correct?'right ✓':'wrong ✗'})</span>.`;}
+    else $('predNote').innerHTML='Above the boundary = predicted <span class="warn">crash</span>, below = safe. Hit <b>New takeoff</b> to forecast a fresh flight.';
+  }
+  if(MODE==='predict')drawChart();
+}
+pbmS.oninput=e=>{pBM=+e.target.value;refreshPredict();};
+pbcS.oninput=e=>{pBC=+e.target.value;refreshPredict();};
+$('takeoffBtn').onclick=()=>{
+  if(predPhase==='flying')return;
+  const w=Math.random()*PWMAX, r=Math.random()*PRMAX;
+  predPt={w,r}; predWind=w/PWMAX; predRain=r/PRMAX;         // live weather into the 3D scene
+  predForecast=(r>pBM*w+pBC)?'crash':'safe';               // student model's forecast
+  predTruth=trueCrashP(w,r);                               // hidden reality (revealed by the flight)
+  predPhase='flying'; predScored=false;
+  predAnimReq=predTruth?'crashing':'climbing';
+  verdict.style.color='#5aa9e6';
+  verdict.textContent=`Your model forecasts ${predForecast==='crash'?'CRASH 💥':'SAFE ✔'} — launching autonomously…`;
+  updatePredHUD(); refreshPredict();
+};
+$('predFitBtn').onclick=()=>{
+  if(predPhase==='flying')return;
+  const m0=pBM,c0=pBC,steps=48;let i=0;(function a(){i++;const tt=i/steps;
+    pBM=m0+(PBM_BEST-m0)*tt;pBC=c0+(PBC_BEST-c0)*tt;pbmS.value=pBM;pbcS.value=pBC;refreshPredict();
+    if(i<steps)requestAnimationFrame(a);
+    else{verdict.style.color='#7fd1c9';verdict.textContent=`The machine's boundary: rain = ${PBM_BEST.toFixed(2)}·wind + ${PBC_BEST.toFixed(0)} — it matches the hidden crash rule.`;}})();
+};
+function predictReset(){
+  predPhase='tune';predPt=null;predForecast=null;predTruth=null;predScored=false;
+  predScore=0;predTotal=0;predAnim='idle';predAnimReq=null;predRoll=0;predRollVel=0;
+  predWind=0;predRain=0; $('takeoffBtn').disabled=false;
+  refreshPredict();updatePredHUD();
+}
+
 // tabs
 function setMode(m){
+  const leavingMission=(MODE==='mission'&&m!=='mission');
+  const leavingPredict=(MODE==='predict'&&m!=='predict');
   MODE=m;
   $('tabReg').classList.toggle('on',m==='reg');$('tabStab').classList.toggle('on',m==='stab');
+  $('tabMission').classList.toggle('on',m==='mission');$('tabPredict').classList.toggle('on',m==='predict');
   $('panelReg').style.display=m==='reg'?'block':'none';
   $('panelStab').style.display=m==='stab'?'block':'none';
+  $('panelMission').style.display=m==='mission'?'block':'none';
+  $('panelPredict').style.display=m==='predict'?'block':'none';
   $('chartCap').textContent = m==='reg'?'payload (g)  →  hover throttle (%)'
+    : m==='mission'?'bench flights: payload (g)  →  current (A)'
+    : m==='predict'?'past takeoffs: wind (kt)  →  rain (mm/h)'
     : 'tilt angle over time  ·  green = ML on, red = off';
-  step.innerHTML = m==='reg'?STEP_REG:STEP_STAB;
-  if(window._controls) window._controls.autoRotate = (m!=='stab');
+  step.innerHTML = m==='reg'?STEP_REG : m==='mission'?STEP_MISS : m==='predict'?STEP_PRED : STEP_STAB;
+  if(leavingMission){ removeMissKeys(); if(window._missionView)window._missionView(false); }
+  if(leavingPredict){ predWind=0;predRain=0;predAnim='idle';predAnimReq=null;predRoll=0;predRollVel=0; }
+  if(window._controls) window._controls.autoRotate = (m==='reg');
   if(m==='reg'){verdict.textContent='';refreshReg();}
+  else if(m==='mission'){verdict.textContent='';missResetToTune();if(window._missionView)window._missionView(true);}
+  else if(m==='predict'){verdict.textContent='';predictReset();}
   else{roll=0;rollVel=0;crashed=false;slideX=0;tiltBuf.length=0;setStab(STAB);drawChart();}
 }
 $('tabReg').onclick=()=>setMode('reg');
+$('tabMission').onclick=()=>setMode('mission');
+$('tabPredict').onclick=()=>setMode('predict');
 $('tabStab').onclick=()=>setMode('stab');
+
+// sound: resume the (gesture-gated) AudioContext on first interaction + mute toggle
+['pointerdown','keydown','input'].forEach(ev=>addEventListener(ev,()=>Sound.ensure(),{once:true,capture:true}));
+const muteBtn=$('muteBtn');
+function renderMute(){ muteBtn.textContent=Sound.isMuted()?'🔇':'🔊'; muteBtn.title=Sound.isMuted()?'sound off':'sound on'; }
+renderMute();
+muteBtn.onclick=()=>{ Sound.ensure(); Sound.setMute(!Sound.isMuted()); renderMute(); };
 
 // ===========================================================================
 //  3D DRONE  (model unchanged; reacts per mode)
@@ -385,6 +824,33 @@ function main(){
     prop.userData.dir=front?1:-1;props.push(prop);drone.add(prop);
   });
 
+  // --- CURRENT-FLOW pulses: emissive dots stream hub -> motor along each arm; rate/speed/brightness
+  //     track tachRPM (the current draw). Cyan idle trickle -> bright warm torrent near the redline. Decorative. ---
+  const FLOWN=3, flowDots=[], flowGeo=new THREE.SphereGeometry(0.05,8,8);
+  let flowPhase=0;
+  dirs.forEach(([sx,sz])=>{
+    const mx=sx*aLen/Math.SQRT2, mz=sz*aLen/Math.SQRT2;
+    for(let k=0;k<FLOWN;k++){
+      const m=new THREE.MeshBasicMaterial({color:ACCENT,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false});
+      const d=new THREE.Mesh(flowGeo,m);d.renderOrder=2;drone.add(d);
+      flowDots.push({mesh:d,mx,mz,off:k/FLOWN});
+    }
+  });
+  const flowCol=new THREE.Color();
+  function updateArmFlow(dt){
+    const frac=Math.max(0,Math.min(1,tachRPM/9000));            // current proxy
+    flowPhase=(flowPhase+dt*(0.5+2.6*frac))%1;                  // stream speed ∝ current
+    const warm=Math.max(0,(frac-0.72)/0.28);                    // 0 until ~redline, ->1 at ceiling
+    flowCol.setHSL((180-120*warm)/360,0.9,0.55);               // cyan -> warm/orange near redline
+    const bright=0.12+0.88*frac;                                // idle trickle -> bright torrent
+    for(const f of flowDots){
+      const t=(flowPhase+f.off)%1;
+      f.mesh.position.set((0.26+0.74*t)*f.mx,0.07+0.09*t,(0.26+0.74*t)*f.mz);   // hub -> motor(y≈0.16)
+      f.mesh.material.color.copy(flowCol);
+      f.mesh.material.opacity=bright*Math.sin(Math.PI*t)*0.9;   // fade in off the hub, fade out at the motor
+    }
+  }
+
   const gimbal=new THREE.Group();gimbal.position.set(0,-0.28,-1.02);
   const yoke=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.34,0.4),matBody);yoke.castShadow=true;gimbal.add(yoke);
   const lens=new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.17,0.16,20),matLens);lens.rotation.x=Math.PI/2;lens.position.z=-0.22;gimbal.add(lens);drone.add(gimbal);
@@ -394,6 +860,24 @@ function main(){
   });
 
   const crate=new THREE.Group();const box=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),matCrate);box.castShadow=true;crate.add(box);crate.visible=false;drone.add(crate);
+
+  // MISSION: landing pads A (neutral) and B (green target), hidden outside mission
+  const padGeo=new THREE.BoxGeometry(2.4,0.4,2.4);
+  const padA=new THREE.Mesh(padGeo,new THREE.MeshStandardMaterial({color:0x2a3038,roughness:0.85,metalness:0.1}));
+  padA.position.set(MISS.XA,MISS.GROUNDY+0.2,0);padA.receiveShadow=true;padA.visible=false;scene.add(padA);
+  const padB=new THREE.Mesh(padGeo,new THREE.MeshStandardMaterial({color:0x123a2a,emissive:0x1f6a44,emissiveIntensity:0.5,roughness:0.7,metalness:0.1}));
+  padB.position.set(MISS.XB,MISS.GROUNDY+0.2,0);padB.receiveShadow=true;padB.visible=false;scene.add(padB);
+  const defCamPos=camera.position.clone(), defTarget=controls.target.clone();
+  window._missionView=function(on){
+    if(on){camera.position.set(0,0.4,19);controls.target.set(0,0.2,0);controls.autoRotate=false;
+      padA.visible=true;padB.visible=true;}
+    else{camera.position.copy(defCamPos);controls.target.copy(defTarget);controls.enabled=true;
+      padA.visible=false;padB.visible=false;}
+    camera.lookAt(controls.target);
+  };
+  function missEnd(win,msg){missPhase=win?'won':'lost';removeMissKeys();
+    if(win)Sound.chime();else Sound.crash();
+    verdict.style.color=win?'#5ad18a':'#ff6a4c';verdict.textContent=msg;}
 
   addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
 
@@ -407,13 +891,14 @@ function main(){
       const load=PAYLOAD/450;
       const applied=M*PAYLOAD+C, required=0.088*PAYLOAD+45.5;
       const maxed=applied>THROTTLE_CEIL, underpowered=applied<required-4, crashing=maxed||underpowered;
+      if(crashing&&!regWasCrashing)Sound.crash();  regWasCrashing=crashing;   // thud once on entering a crash state
       regDrop+=((crashing?1:0)-regDrop)*Math.min(1,dt*2.5);   // eased hover<->crash so live slider fixes recover
       const spin=(0.7+load*1.6)*(1-regDrop)+0.05*regDrop;
       props.forEach(p=>p.rotation.y+=p.userData.dir*spin);
       drone.position.x=0;
       drone.position.y=(Math.sin(t*1.3)*0.06-load*0.35)*(1-regDrop)+(-1.0)*regDrop;
       drone.rotation.z=Math.sin(t*0.9)*0.015*(1-regDrop)+regDrop*Math.sin(t*7)*0.12;drone.rotation.x=0;
-      if(PAYLOAD>8){crate.visible=true;const s=0.35+load*0.9;box.scale.set(s,s,s);box.position.y=-1.35-s*0.4;}else crate.visible=false;
+      if(PAYLOAD>8){crate.visible=true;const s=0.3+load*0.55;box.scale.set(s,s,s);box.position.y=-1.2-s*0.4;}else crate.visible=false;
       if(crashing){const f=(Math.sin(t*10)>0)?1.4:0.2;leds.forEach(m=>{m.emissive.setHex(0xff2a1a);m.emissiveIntensity=f;});}
       else leds.forEach(m=>{m.emissive.setHex(m.userData.base);m.emissiveIntensity=1.1;});   // restore nav lights
       curThrottle=Math.max(0,Math.min(100,applied))*(1-regDrop);
@@ -421,6 +906,87 @@ function main(){
       if(st){if(maxed){st.textContent='MOTORS MAXED';st.style.color='#ff6a4c';}
         else if(underpowered){st.textContent='UNDERPOWERED — CRASHING';st.style.color='#ff6a4c';}
         else{st.textContent='HOVERING';st.style.color='#5ad18a';}}
+
+    } else if(MODE==='mission'){
+      controls.enabled=(missPhase!=='flying');            // free orbit while tuning; locked while flying
+      crate.visible=true; const cs=0.7; box.scale.set(cs,cs,cs); box.position.y=-1.5-cs*0.4;
+      if(missPhase==='flying'){
+        const tt=missKeys.up?1:0;
+        missTau+=(tt-missTau)*Math.min(1,dt*12);
+        const thrust=missTau*missApplied;
+        missVY+=(thrust-missWg)*MISS.KA*dt;                // ay=(throttle*maxThrust - W)*g
+        if(missY>0.05){const ax=(missKeys.right?MISS.HACC:0)-(missKeys.left?MISS.HACC:0);missVX+=ax*dt;}
+        missVX*=(1-MISS.HDRAG*dt); if(missY<=0.05)missVX*=0.9;   // no ground skid
+        missX+=missVX*dt; missY+=missVY*dt;
+        if(missY>1.0)missFlown=true;
+        missCurrent=missApplied*(MISS.IDLE+(1-MISS.IDLE)*missTau);   // props never fully idle => floor ∝ applied
+        missBatt-=missCurrent*dt*MISS.DRAIN;
+        if(missBatt<=0){missBatt=0;missEnd(false, missFlown
+          ?'🔋 Battery dead en route — that line draws heavy current the whole way. Trim it leaner and fly a straighter path to B.'
+          :'🔋 Battery dead before it ever climbed — this line barely clears the 430 g cargo. Nudge the fit so it predicts a touch more current, then relaunch.');}
+        else if(missY<=0&&missVY<0){
+          const impact=missVY; missY=0;
+          if(missFlown){
+            if(missX>MISS.XB-1.3&&Math.abs(impact)<MISS.VHARD){missVY=0;missEnd(true,`✅ Delivered to pad B with ${missBatt.toFixed(0)}% battery to spare. Your model flew the mission.`);}
+            else if(Math.abs(impact)>=MISS.VHARD){missVY=0;missEnd(false,'💥 Hard landing. Feather the thrust to soften the touchdown.');}
+            else missVY=0;                                  // gentle touch off-target: rest, keep flying
+          } else missVY=0;                                  // still on pad A — not enough thrust to lift
+        }
+      } else if(missPhase==='lost'&&missY>0){               // dead in the air => fall
+        missVY+=(-missWg)*MISS.KA*dt; missY+=missVY*dt; if(missY<0){missY=0;missVY=0;}
+      }
+      if(missX<MISS.XA)missX=MISS.XA; if(missX>MISS.XB+1)missX=MISS.XB+1;
+      drone.position.set(missX,MISS.ORIGIN0+missY,0);       // constrained to the X-Y plane (z=0)
+      if(missPhase==='lost')drone.rotation.z+=dt*1.6; else drone.rotation.z=Math.max(-0.4,Math.min(0.4,-missVX*0.08));
+      drone.rotation.x=0;
+      const spin=(missPhase==='flying')?(0.3+missTau*1.4):(missPhase==='won'?0.15:0.05);
+      props.forEach(p=>p.rotation.y+=p.userData.dir*spin);
+      curThrottle=Math.max(0,Math.min(100,missTau*100));
+      const bad=(missPhase==='lost')||(missPhase==='flying'&&missBatt<20);
+      leds.forEach(m=>{if(bad){m.emissive.setHex(0xff2a1a);m.emissiveIntensity=(Math.sin(t*12)>0)?1.4:0.3;}
+        else if(missPhase==='won'){m.emissive.setHex(0x18c24a);m.emissiveIntensity=1.3;}
+        else{m.emissive.setHex(m.userData.base);m.emissiveIntensity=1.1;}});
+      updateMissHUD();
+      if(missPhase==='flying'){verdict.style.color='#5aa9e6';
+        verdict.textContent = missY<0.2?'Hold Up/Space to lift the cargo off pad A…'
+          :(missX<MISS.XB-1.3?'Climbing — press → toward pad B, mind the battery.':'Over pad B — ease off to set it down gently.');}
+
+    } else if(MODE==='predict'){
+      controls.enabled=true; crate.visible=false;
+      if(predAnimReq){predAnim=predAnimReq;predAnimReq=null;predAnimT=t;
+        predRoll=0;predRollVel=(predAnim==='crashing')?((Math.random()<0.5?-1:1)*1.9):0;}
+      const a=t-predAnimT;
+      // reveal reality + score the forecast at a fixed beat into the autonomous flight
+      if(predPhase==='flying'&&!predScored&&a>1.0){
+        predScored=true;predTotal++;
+        const correct=((predForecast==='crash')===predTruth); if(correct)predScore++;
+        if(predTruth)Sound.crash(); if(correct)Sound.chime();   // reality thud + reward for a right call
+        verdict.style.color=correct?'#5ad18a':'#ff6a4c';
+        verdict.textContent=`Reality: ${predTruth?'CRASHED 💥':'flew safely ✔'} — your forecast was ${correct?'RIGHT ✓':'WRONG ✗'}. Score ${predScore}/${predTotal}.`;
+        updatePredHUD(); refreshPredict();
+      }
+      let spin=1.1;
+      if(predAnim==='climbing'){                       // survives => steady climb-out
+        drone.position.x=0; drone.position.y=Math.min(3.2,a*1.3)+Math.sin(t*1.3)*0.05;
+        drone.rotation.z=Math.sin(t*0.9)*0.02; spin=1.35;
+        if(a>2.8){predAnim='idle';predPhase='tune';$('takeoffBtn').disabled=false;updatePredHUD();refreshPredict();}
+      } else if(predAnim==='crashing'){                // reality crash => brief lift, tip, tumble, fall
+        predRollVel+=(Math.sin(t*2.1)+Math.sin(t*0.7))*0.05*dt; predRoll+=predRollVel*dt;
+        const lift=Math.max(0,0.55-a*0.45);
+        drone.position.y=lift-Math.max(0,(a-0.6))*3.2; if(drone.position.y<-1.0)drone.position.y=-1.0;
+        drone.position.x+=Math.sin(predRoll)*2.0*dt; drone.rotation.z=predRoll;
+        spin=Math.max(0.05,1.6-a*1.0);
+        if(a>2.8){predAnim='idle';predPhase='tune';predRoll=0;predRollVel=0;drone.position.set(0,0,0);$('takeoffBtn').disabled=false;updatePredHUD();refreshPredict();}
+      } else {                                          // idle hover on the pad, waiting for a takeoff
+        drone.position.set(0,Math.sin(t*1.3)*0.05,0); drone.rotation.z=Math.sin(t*0.9)*0.015;
+      }
+      drone.rotation.x=0;
+      props.forEach(p=>p.rotation.y+=p.userData.dir*spin);
+      curThrottle=Math.max(0,Math.min(100,spin*40));
+      if(predAnim!=='idle'){                            // LEDs reveal reality during the flight
+        if(predTruth)leds.forEach(m=>{m.emissive.setHex(0xff2a1a);m.emissiveIntensity=(Math.sin(t*10)>0)?1.4:0.3;});
+        else leds.forEach(m=>{m.emissive.setHex(0x18c24a);m.emissiveIntensity=1.2;});
+      } else leds.forEach(m=>{m.emissive.setHex(m.userData.base);m.emissiveIntensity=1.1;});
 
     } else {
       crate.visible=false;
@@ -430,7 +996,7 @@ function main(){
       if(STAB&&!crashed) rollVel+=(-9.0*roll-4.0*rollVel)*dt;   // ML holds a small steady lean = windForce/9
       else rollVel+=(-0.25*rollVel)*dt;                         // ML off: wind integrates -> drifts over & crashes
       roll+=rollVel*dt;
-      if(!STAB&&Math.abs(roll)>1.2&&!crashed){crashed=true;crashT=t;}
+      if(!STAB&&Math.abs(roll)>1.2&&!crashed){crashed=true;crashT=t;Sound.crash();}
       const spin=crashed?Math.max(0,2.2-(t-crashT)*1.5):(STAB?1.25:1.05);
       props.forEach(p=>p.rotation.y+=p.userData.dir*spin);
       curThrottle=Math.max(0,Math.min(100,spin*41));
@@ -450,7 +1016,7 @@ function main(){
     // instrument cluster: ease RPM toward throttle-mapped target (hover 45%≈3000, ceiling≈9000 redline)
     const targetRPM=Math.max(0,Math.min(9000,116*(curThrottle-45)+3000));
     tachRPM+=(targetRPM-tachRPM)*Math.min(1,dt*5);
-    drawTach(tachRPM);drawWind();
+    drawTach(tachRPM);drawWind();Sound.update(dt);updateArmFlow(dt);
     controls.update();renderer.render(scene,camera);
   })();
 }
