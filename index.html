@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teach the Drone — a fun ML tutorial for Denny</title>
+<style>
+  html,body{margin:0;height:100%;background:#0e1116;overflow:hidden;
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:#e7edf4;}
+  canvas{display:block;}
+
+  #hud{position:fixed;left:18px;top:16px;z-index:10;max-width:440px;line-height:1.4;}
+  #hud h1{margin:0;font-size:34px;font-weight:800;letter-spacing:.4px;pointer-events:none;}
+  #tabs{display:flex;gap:6px;margin:10px 0 8px;flex-wrap:wrap;}
+  #tabs button{font:inherit;font-size:12px;padding:6px 10px;border-radius:8px;cursor:pointer;
+    border:1px solid #2f3a45;background:#161d25;color:#9aa6b3;transition:.12s;}
+  #tabs button.on{background:#243a44;border-color:#356;color:#bff0e6;}
+  #step{font-size:13px;color:#c3cdd8;pointer-events:none;}
+  #step b{color:#7fd1c9;}
+  #verdict{margin-top:9px;font-size:14px;font-weight:600;min-height:18px;pointer-events:none;}
+
+  .panel{position:fixed;left:18px;bottom:16px;z-index:10;width:404px;font-size:13.5px;
+    background:rgba(18,23,30,0.82);border:1px solid #232c36;border-radius:12px;
+    padding:18px 22px 16px;backdrop-filter:blur(6px);}
+  .row{display:flex;align-items:center;gap:10px;margin:10px 0;}
+  .row label{font-size:13px;color:#9aa6b3;width:92px;flex:none;}
+  input[type=range]{flex:1;accent-color:#e08a4b;}
+  .val{font-size:12px;color:#e7edf4;width:56px;text-align:right;font-variant-numeric:tabular-nums;}
+  .val.slope{color:#e08a4b;} .val.start{color:#5aa9e6;}
+
+  .meterWrap{margin:10px 0 4px;}
+  .meterWrap .lbl{display:flex;justify-content:space-between;font-size:12px;color:#9aa6b3;margin-bottom:4px;}
+  .meterWrap .lbl b{color:#e7edf4;font-variant-numeric:tabular-nums;}
+  .meterBar{height:9px;border-radius:5px;background:#222b34;overflow:hidden;}
+  .meterFill{height:100%;width:100%;border-radius:5px;transition:width .12s,background .12s;}
+
+  .note{margin-top:9px;font-size:13px;color:#c3cdd8;line-height:1.45;}
+  .note b{color:#7fd1c9;} .warn{color:#ff8a5c;}
+
+  .btns{display:flex;gap:8px;margin-top:11px;}
+  .btns button{flex:1;font:inherit;font-size:12px;padding:8px 6px;border-radius:8px;cursor:pointer;
+    border:1px solid #2f3a45;background:#1a222b;color:#dbe4ee;transition:.12s;}
+  .btns button:hover{background:#232d38;border-color:#3d4b58;}
+  .btns button.primary{background:#274b45;border-color:#356;color:#bff0e6;}
+  .btns button.primary:hover{background:#2f5a52;}
+
+  #switchRow{display:flex;align-items:center;gap:12px;margin:6px 0 12px;}
+  #mlToggle{width:64px;height:32px;border-radius:18px;background:#3a2222;border:1px solid #5a3030;
+    position:relative;cursor:pointer;transition:.18s;flex:none;}
+  #mlToggle.on{background:#1f4a3a;border-color:#2f7a5e;}
+  #knob{position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;background:#e7edf4;transition:.18s;}
+  #mlToggle.on #knob{left:35px;}
+  #switchRow .lab{font-size:14px;font-weight:600;}
+  #switchRow .lab.off{color:#ff8a5c;} #switchRow .lab.on{color:#5ad18a;}
+
+  #chartWrap{position:fixed;right:16px;top:16px;z-index:10;
+    background:rgba(18,23,30,0.82);border:1px solid #232c36;border-radius:12px;
+    padding:10px 12px 6px;backdrop-filter:blur(6px);pointer-events:none;}
+  #chartCap{font-size:12px;color:#9aa6b3;margin:0 2px 6px;}
+  #chart{display:block;}
+
+  #tachWrap{margin-top:12px;text-align:center;}
+  #tachCap{font-size:11px;color:#9aa6b3;margin:2px 0 0;letter-spacing:.6px;text-transform:uppercase;}
+  #windfx{position:fixed;inset:0;z-index:5;pointer-events:none;}
+  #regStatus{margin-top:7px;font-size:14px;font-weight:800;letter-spacing:.4px;color:#5ad18a;}
+
+  #tip{position:fixed;right:18px;bottom:14px;font-size:12px;color:#6d7887;z-index:10;pointer-events:none;}
+  #err{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
+    max-width:80%;text-align:center;font-size:15px;color:#c9d3de;display:none;}
+</style>
+</head>
+<body>
+<canvas id="windfx"></canvas>
+<div id="hud">
+  <h1>Teach the drone</h1>
+  <div id="tabs">
+    <button id="tabReg" class="on">Regression</button>
+    <button id="tabStab">Stabilize · ML on/off</button>
+  </div>
+  <div id="step"></div>
+  <div id="verdict"></div>
+</div>
+
+<!-- REGRESSION panel : predict a NUMBER -->
+<div id="panelReg" class="panel">
+  <div class="row">
+    <label>slope&nbsp;m</label>
+    <input id="mSlider" type="range" min="0" max="0.20" step="0.002" value="0.020">
+    <span class="val slope" id="mVal">0.020</span>
+  </div>
+  <div class="row">
+    <label>start&nbsp;c</label>
+    <input id="cSlider" type="range" min="30" max="70" step="0.5" value="62">
+    <span class="val start" id="cVal">62.0</span>
+  </div>
+  <div class="meterWrap">
+    <div class="lbl"><span>fit error (lower = better)</span><b id="errNum">–</b></div>
+    <div class="meterBar"><div class="meterFill" id="regFill"></div></div>
+  </div>
+  <div class="row" style="margin-top:12px;">
+    <label>payload</label>
+    <input id="pSlider" type="range" min="0" max="450" step="5" value="150">
+    <span class="val" id="pVal">150 g</span>
+  </div>
+  <div id="regNote" class="note"></div>
+  <div id="regStatus">HOVERING</div>
+  <div class="btns">
+    <button id="fitBtn" class="primary">Show the machine's answer</button>
+    <button id="resetBtn">Reset my line</button>
+  </div>
+</div>
+
+<!-- STABILIZE panel : with vs without ML -->
+<div id="panelStab" class="panel" style="display:none;">
+  <div id="switchRow">
+    <div id="mlToggle" class="on"><div id="knob"></div></div>
+    <div class="lab on" id="mlLab">ML stabilizer: ON</div>
+  </div>
+  <div class="row">
+    <label>wind</label>
+    <input id="windSlider" type="range" min="0" max="1" step="0.05" value="0">
+    <span class="val" id="windVal">calm</span>
+  </div>
+  <div id="stabNote" class="note"></div>
+  <div class="btns">
+    <button id="gustBtn" class="primary">💨 Hit it with a gust</button>
+    <button id="calmBtn">Reset</button>
+  </div>
+</div>
+
+<div id="chartWrap">
+  <p id="chartCap">payload (g)  →  hover throttle (%)</p>
+  <canvas id="chart" width="380" height="276"></canvas>
+  <div id="tachWrap">
+    <canvas id="tach" width="220" height="150"></canvas>
+    <div id="tachCap">motor RPM</div>
+  </div>
+</div>
+
+<div id="tip">Drag the 3D scene to orbit · scroll to zoom</div>
+<div id="err">Couldn&rsquo;t load the 3D library (needs internet the first time).<br>
+  The controls on the left still teach the ML idea.</div>
+
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+// ===========================================================================
+//  MODE
+// ===========================================================================
+let MODE = 'reg';                     // 'reg' | 'stab'
+
+// ---- REGRESSION : payload (g) -> hover throttle (%)  [predict a NUMBER] ----
+const DATA = [
+  {p:20,y:47},{p:60,y:51},{p:110,y:54},{p:150,y:59},{p:200,y:62},{p:250,y:68},{p:290,y:70}
+];
+const P_MAX_TESTED = 290, THROTTLE_CEIL = 90;
+function leastSquares(pts){
+  const n=pts.length; let sx=0,sy=0,sxy=0,sxx=0;
+  pts.forEach(d=>{sx+=d.p;sy+=d.y;sxy+=d.p*d.y;sxx+=d.p*d.p;});
+  const m=(n*sxy-sx*sy)/(n*sxx-sx*sx); return {m, c:(sy-m*sx)/n};
+}
+const BEST = leastSquares(DATA);
+let M=0.020, C=62, PAYLOAD=150;
+function fitError(m,c){ let s=0; DATA.forEach(d=>s+=Math.abs(d.y-(m*d.p+c))); return s/DATA.length; }
+
+// ---- STABILIZE ------------------------------------------------------------
+let STAB=true, roll=0, rollVel=0, crashed=false, crashT=0, slideX=0;
+const tiltBuf=[]; const TILT_N=150;
+
+// ---- shared instrument state (tachometer / physics / wind) ----------------
+let regDrop=0, windLevel=0, tachRPM=3000, curThrottle=45, windCleared=false;
+
+// ===========================================================================
+//  CHART  (one canvas, three drawers)
+// ===========================================================================
+const cv=document.getElementById('chart'), cx=cv.getContext('2d');
+const CW=cv.width, CH=cv.height, PAD_L=34,PAD_B=26,PAD_T=8,PAD_R=10;
+
+// -- regression --
+const X0=0,X1=450,Y0=40,Y1=95;
+const rpx=p=>PAD_L+(p-X0)/(X1-X0)*(CW-PAD_L-PAD_R);
+const rpy=y=>CH-PAD_B-(y-Y0)/(Y1-Y0)*(CH-PAD_T-PAD_B);
+function drawReg(){
+  cx.clearRect(0,0,CW,CH);
+  cx.strokeStyle='#232c36';cx.lineWidth=1;cx.fillStyle='#6d7887';cx.font='10px Helvetica Neue';
+  cx.textAlign='right';cx.textBaseline='middle';
+  for(let y=40;y<=90;y+=10){const Y=rpy(y);cx.beginPath();cx.moveTo(PAD_L,Y);cx.lineTo(CW-PAD_R,Y);cx.stroke();cx.fillText(y,PAD_L-5,Y);}
+  cx.textAlign='center';cx.textBaseline='top';
+  for(let p=0;p<=450;p+=150)cx.fillText(p,rpx(p),CH-PAD_B+5);
+  cx.fillStyle='rgba(224,138,75,0.06)';cx.fillRect(rpx(P_MAX_TESTED),PAD_T,CW-PAD_R-rpx(P_MAX_TESTED),CH-PAD_T-PAD_B);
+  cx.fillStyle='#6d7887';cx.font='9px Helvetica Neue';cx.textAlign='left';cx.fillText('untested',rpx(P_MAX_TESTED)+3,PAD_T+2);
+  cx.strokeStyle='#e08a4b';cx.lineWidth=2;cx.beginPath();cx.moveTo(rpx(X0),rpy(M*X0+C));cx.lineTo(rpx(X1),rpy(M*X1+C));cx.stroke();
+  DATA.forEach(d=>{cx.strokeStyle='rgba(154,166,179,0.45)';cx.lineWidth=1;
+    cx.beginPath();cx.moveTo(rpx(d.p),rpy(d.y));cx.lineTo(rpx(d.p),rpy(M*d.p+C));cx.stroke();
+    cx.fillStyle='#7fd1c9';cx.beginPath();cx.arc(rpx(d.p),rpy(d.y),3.6,0,7);cx.fill();});
+  const yp=M*PAYLOAD+C, overCeil=(yp>THROTTLE_CEIL);   // red = physically can't hover; untested zone is shaded, not recoloured
+  cx.strokeStyle=overCeil?'#ff6a4c':'#5aa9e6';cx.setLineDash([3,3]);cx.lineWidth=1.4;
+  cx.beginPath();cx.moveTo(rpx(PAYLOAD),CH-PAD_B);cx.lineTo(rpx(PAYLOAD),rpy(Math.min(yp,Y1)));cx.stroke();
+  cx.setLineDash([]);cx.fillStyle=overCeil?'#ff6a4c':'#5aa9e6';
+  cx.beginPath();cx.arc(rpx(PAYLOAD),rpy(Math.min(Math.max(yp,Y0),Y1)),4,0,7);cx.fill();
+}
+
+// -- tilt strip --
+function drawTilt(){
+  cx.clearRect(0,0,CW,CH);
+  const midY=CH/2, span=70, toY=deg=>midY-(deg/span)*(CH/2-10);
+  cx.fillStyle='rgba(90,209,138,0.08)';cx.fillRect(0,toY(10),CW,toY(-10)-toY(10));
+  cx.strokeStyle='#232c36';cx.lineWidth=1;cx.beginPath();cx.moveTo(0,midY);cx.lineTo(CW,midY);cx.stroke();
+  cx.fillStyle='#6d7887';cx.font='10px Helvetica Neue';cx.textAlign='left';cx.textBaseline='middle';
+  cx.fillText('level',4,midY-8);cx.fillText('+60°',4,toY(58));cx.fillText('-60°',4,toY(-58));
+  cx.strokeStyle=STAB?'#5ad18a':'#ff6a4c';cx.lineWidth=2;cx.beginPath();
+  for(let i=0;i<tiltBuf.length;i++){const x=i/(TILT_N-1)*CW,y=toY(Math.max(-span,Math.min(span,tiltBuf[i])));i?cx.lineTo(x,y):cx.moveTo(x,y);}
+  cx.stroke();
+}
+function drawChart(){ MODE==='reg'?drawReg():drawTilt(); }
+
+// -- RPM tachometer (car-dashboard style, top semicircle, redline near top) --
+const tv=document.getElementById('tach'), tcx=tv.getContext('2d'), TW=tv.width, TH=tv.height;
+function drawTach(rpm){
+  tcx.clearRect(0,0,TW,TH);
+  const cx0=TW/2, cy0=TH-34, R=Math.min(TW/2-14,TH-50);
+  const A0=Math.PI, A1=Math.PI*2, RMAX=9000, RED=8000;
+  const cl=r=>Math.max(0,Math.min(RMAX,r)), ang=r=>A0+cl(r)/RMAX*(A1-A0);
+  tcx.lineCap='round';
+  tcx.lineWidth=8;tcx.strokeStyle='#2b333d';tcx.beginPath();tcx.arc(cx0,cy0,R,A0,A1);tcx.stroke();
+  tcx.strokeStyle='#ff6a4c';tcx.beginPath();tcx.arc(cx0,cy0,R,ang(RED),A1);tcx.stroke();   // redline arc
+  tcx.strokeStyle='#54606c';tcx.fillStyle='#9aa6b3';tcx.font='9px Helvetica Neue';tcx.textAlign='center';tcx.textBaseline='middle';tcx.lineWidth=1.5;
+  for(let r=0;r<=RMAX;r+=1000){const a=ang(r),c=Math.cos(a),s=Math.sin(a);
+    tcx.beginPath();tcx.moveTo(cx0+c*(R-5),cy0+s*(R-5));tcx.lineTo(cx0+c*(R+3),cy0+s*(R+3));tcx.stroke();
+    if(r%3000===0)tcx.fillText(r/1000,cx0+c*(R-16),cy0+s*(R-16));}
+  const a=ang(rpm),nc=Math.cos(a),ns=Math.sin(a);
+  tcx.strokeStyle='#1fd6c8';tcx.lineWidth=2.6;tcx.beginPath();tcx.moveTo(cx0-nc*7,cy0-ns*7);tcx.lineTo(cx0+nc*(R-12),cy0+ns*(R-12));tcx.stroke();   // needle (decorative cyan)
+  tcx.fillStyle='#1fd6c8';tcx.beginPath();tcx.arc(cx0,cy0,4,0,7);tcx.fill();
+  tcx.fillStyle='#1fd6c8';tcx.font='bold 21px Helvetica Neue';tcx.textBaseline='alphabetic';tcx.fillText(Math.round(rpm/10)*10,cx0,cy0-14);
+  tcx.fillStyle='#6d7887';tcx.font='9px Helvetica Neue';tcx.fillText('RPM',cx0,cy0-2);
+}
+drawTach(3000);
+
+// -- steady-wind streaklines across the scene (Stabilize mode) ---------------
+const windCv=document.getElementById('windfx'), wcx=windCv.getContext('2d');
+function sizeWind(){windCv.width=innerWidth;windCv.height=innerHeight;}
+sizeWind();addEventListener('resize',sizeWind);
+let windParts=[];
+function drawWind(){
+  if(MODE!=='stab'||windLevel<=0){ if(!windCleared){wcx.clearRect(0,0,windCv.width,windCv.height);windCleared=true;} return; }
+  windCleared=false;
+  const n=Math.round(windLevel*70);
+  while(windParts.length<n)windParts.push({x:Math.random()*windCv.width,y:Math.random()*windCv.height,len:24+Math.random()*46,v:0.7+Math.random()*0.8});
+  if(windParts.length>n)windParts.length=n;
+  wcx.clearRect(0,0,windCv.width,windCv.height);
+  const speed=2+windLevel*11;
+  wcx.strokeStyle='rgba(130,175,205,0.22)';wcx.lineWidth=1.4;
+  for(const p of windParts){ p.x+=speed*p.v; if(p.x-p.len>windCv.width){p.x=-p.len;p.y=Math.random()*windCv.height;}
+    wcx.beginPath();wcx.moveTo(p.x,p.y);wcx.lineTo(p.x-p.len,p.y);wcx.stroke(); }   // blows to the right
+}
+
+// ===========================================================================
+//  UI
+// ===========================================================================
+const $=id=>document.getElementById(id);
+const verdict=$('verdict'), step=$('step');
+
+const STEP_REG='Every extra gram needs more throttle to hover. You have <b>7 test flights</b> '+
+  '(dots). Drag <b>slope</b> and <b>start</b> so the line runs through them — that line <b>is</b> '+
+  'your model, <b>y = m·x + c</b>. Regression <b>predicts a number</b>.';
+const STEP_STAB='A drone can\'t stay level on its own. Turn the <b>ML stabilizer</b> off, hit a '+
+  '<b>gust</b>, watch it tumble. Turn it on: it senses tilt and corrects 60×/second. That '+
+  '<b>sense → correct</b> rule is what a model learns.';
+
+// regression wiring
+const mS=$('mSlider'),cS=$('cSlider'),pS=$('pSlider');
+function refreshReg(){
+  $('mVal').textContent=M.toFixed(3);$('cVal').textContent=C.toFixed(1);$('pVal').textContent=Math.round(PAYLOAD)+' g';
+  const e=fitError(M,C);$('errNum').textContent=e.toFixed(2)+' %';
+  const good=Math.max(0,Math.min(1,1-(e-1.4)/9));
+  $('regFill').style.width=(good*100).toFixed(0)+'%';$('regFill').style.background=`hsl(${good*130},70%,50%)`;
+  if(e<1.9){verdict.style.color='#5ad18a';verdict.textContent='🎯 Great fit — that line IS your trained model.';}
+  else if(e<3.6){verdict.style.color='#e0c14b';verdict.textContent='Close. Nudge the sliders to shrink the error.';}
+  else{verdict.style.color='#e0784b';verdict.textContent='Way off — the line misses the dots. Keep adjusting.';}
+  const yp=M*PAYLOAD+C;
+  if(yp>THROTTLE_CEIL)$('regNote').innerHTML=`At <b>${Math.round(PAYLOAD)} g</b> your line predicts <b>${yp.toFixed(0)}%</b> — <span class="warn">above the ~90% the motors can give. Can't hover that heavy.</span>`;
+  else if(PAYLOAD>P_MAX_TESTED)$('regNote').innerHTML=`At <b>${Math.round(PAYLOAD)} g</b> your line predicts <b>${yp.toFixed(0)}%</b> — <span class="warn">but you never tested past ${P_MAX_TESTED} g, so it's a guess.</span>`;
+  else $('regNote').innerHTML=`At <b>${Math.round(PAYLOAD)} g</b> your line predicts <b>${yp.toFixed(0)}%</b> throttle.`;
+  if(MODE==='reg')drawChart();
+}
+mS.oninput=e=>{M=+e.target.value;refreshReg();};
+cS.oninput=e=>{C=+e.target.value;refreshReg();};
+pS.oninput=e=>{PAYLOAD=+e.target.value;refreshReg();};
+$('resetBtn').onclick=()=>{M=0.020;C=62;mS.value=0.020;cS.value=62;refreshReg();};
+$('fitBtn').onclick=()=>{const m0=M,c0=C,steps=48;let i=0;(function a(){i++;const t=i/steps;
+  M=m0+(BEST.m-m0)*t;C=c0+(BEST.c-c0)*t;mS.value=M;cS.value=C;refreshReg();
+  if(i<steps)requestAnimationFrame(a);
+  else{verdict.style.color='#7fd1c9';verdict.textContent=`scikit-learn's line: m=${BEST.m.toFixed(3)}, c=${BEST.c.toFixed(1)}. Close to yours?`;}})();};
+
+// stabilize wiring
+function setStab(on){STAB=on;$('mlToggle').classList.toggle('on',on);
+  const lab=$('mlLab');lab.textContent='ML stabilizer: '+(on?'ON':'OFF');lab.className='lab '+(on?'on':'off');
+  $('stabNote').innerHTML=on
+    ?'The drone reads its tilt and applies a counter-tilt 60×/second — level even after a gust. A model that maps <b>sensor → action</b> does exactly this.'
+    :'<span class="warn">No correction.</span> Nothing cancels a gust, so the tilt grows until it flips and drops.';
+  verdict.textContent='';}
+$('mlToggle').onclick=()=>setStab(!STAB);
+$('gustBtn').onclick=()=>{rollVel+=(Math.random()<0.5?-1:1)*(1.6+Math.random()*0.6);};
+$('calmBtn').onclick=()=>{roll=0;rollVel=0;crashed=false;slideX=0;tiltBuf.length=0;};
+$('windSlider').oninput=e=>{windLevel=+e.target.value;$('windVal').textContent=windLevel<=0?'calm':Math.round(windLevel*100)+'%';};
+
+// tabs
+function setMode(m){
+  MODE=m;
+  $('tabReg').classList.toggle('on',m==='reg');$('tabStab').classList.toggle('on',m==='stab');
+  $('panelReg').style.display=m==='reg'?'block':'none';
+  $('panelStab').style.display=m==='stab'?'block':'none';
+  $('chartCap').textContent = m==='reg'?'payload (g)  →  hover throttle (%)'
+    : 'tilt angle over time  ·  green = ML on, red = off';
+  step.innerHTML = m==='reg'?STEP_REG:STEP_STAB;
+  if(window._controls) window._controls.autoRotate = (m!=='stab');
+  if(m==='reg'){verdict.textContent='';refreshReg();}
+  else{roll=0;rollVel=0;crashed=false;slideX=0;tiltBuf.length=0;setStab(STAB);drawChart();}
+}
+$('tabReg').onclick=()=>setMode('reg');
+$('tabStab').onclick=()=>setMode('stab');
+
+// ===========================================================================
+//  3D DRONE  (model unchanged; reacts per mode)
+// ===========================================================================
+if(!window.THREE){$('err').style.display='block';setMode('reg');}
+else{main();setMode('reg');}
+
+function main(){
+  const scene=new THREE.Scene();scene.background=new THREE.Color(0x0e1116);scene.fog=new THREE.Fog(0x0e1116,14,34);
+  const camera=new THREE.PerspectiveCamera(42,innerWidth/innerHeight,0.1,100);camera.position.set(5.5,4.2,7.5);
+  const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  document.body.appendChild(renderer.domElement);
+  const controls=new THREE.OrbitControls(camera,renderer.domElement);
+  controls.enableDamping=true;controls.dampingFactor=0.08;controls.autoRotate=true;controls.autoRotateSpeed=0.9;
+  controls.minDistance=4;controls.maxDistance=20;controls.target.set(0,0.2,0);window._controls=controls;
+
+  scene.add(new THREE.HemisphereLight(0x9fb4cc,0x1a1f27,0.75));
+  const keyL=new THREE.DirectionalLight(0xffffff,1.15);keyL.position.set(6,10,6);keyL.castShadow=true;
+  keyL.shadow.mapSize.set(1024,1024);keyL.shadow.camera.near=1;keyL.shadow.camera.far=40;
+  keyL.shadow.camera.left=-8;keyL.shadow.camera.right=8;keyL.shadow.camera.top=8;keyL.shadow.camera.bottom=-8;scene.add(keyL);
+  const rim=new THREE.DirectionalLight(0x88a0c0,0.5);rim.position.set(-7,4,-5);scene.add(rim);
+
+  const ground=new THREE.Mesh(new THREE.CircleGeometry(16,64),new THREE.MeshStandardMaterial({color:0x161b22,roughness:0.95,metalness:0.0}));
+  ground.rotation.x=-Math.PI/2;ground.position.y=-2.45;ground.receiveShadow=true;scene.add(ground);   // lowered — visible air under the drone
+  const grid=new THREE.GridHelper(32,32,0x2b333d,0x1c232b);grid.position.y=-2.44;scene.add(grid);
+
+  const matBody=new THREE.MeshStandardMaterial({color:0x232830,roughness:0.5,metalness:0.5});   // darker carbon hull
+  const matDark=new THREE.MeshStandardMaterial({color:0x1c2127,roughness:0.6,metalness:0.4});
+  const matArm=new THREE.MeshStandardMaterial({color:0x3a4049,roughness:0.5,metalness:0.45});
+  const matMotor=new THREE.MeshStandardMaterial({color:0x4a515b,roughness:0.35,metalness:0.7});
+  const matBlade=new THREE.MeshStandardMaterial({color:0x0f1318,roughness:0.4,metalness:0.3,transparent:true,opacity:0.9,side:THREE.DoubleSide});
+  const matLens=new THREE.MeshStandardMaterial({color:0x0a1420,roughness:0.15,metalness:0.9,emissive:0x0a5a66,emissiveIntensity:0.9});   // glowing camera lens
+  const matCrate=new THREE.MeshStandardMaterial({color:0x8a5a2b,roughness:0.8,metalness:0.1});
+  // decorative futuristic accents — cyan, kept OFF the red/green/blue teaching colour language
+  const ACCENT=0x1fd6c8;
+  const matAccent=new THREE.MeshStandardMaterial({color:0x0a2a2e,emissive:ACCENT,emissiveIntensity:0.9,roughness:0.3,metalness:0.6});
+  const matGlow=new THREE.MeshBasicMaterial({color:ACCENT,transparent:true,opacity:0.3});
+
+  const drone=new THREE.Group();scene.add(drone);
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(0.95,1.05,0.5,8),matBody);body.castShadow=true;drone.add(body);
+  const topPlate=new THREE.Mesh(new THREE.CylinderGeometry(0.62,0.62,0.12,8),matDark);topPlate.position.y=0.3;drone.add(topPlate);
+  const batt=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.32,0.7),matDark);batt.position.y=-0.32;batt.castShadow=true;drone.add(batt);
+  // emissive accent seam around the hull + soft cyan underglow (decorative)
+  const accentRing=new THREE.Mesh(new THREE.TorusGeometry(1.0,0.035,10,40),matAccent);accentRing.rotation.x=Math.PI/2;accentRing.position.y=0.05;drone.add(accentRing);
+  const underGlow=new THREE.Mesh(new THREE.CircleGeometry(0.85,32),matGlow);underGlow.rotation.x=-Math.PI/2;underGlow.position.y=-0.5;drone.add(underGlow);
+  const glowLight=new THREE.PointLight(ACCENT,0.5,3.5);glowLight.position.set(0,-0.7,0);drone.add(glowLight);
+
+  const aLen=1.55, dirs=[[1,1],[1,-1],[-1,-1],[-1,1]], props=[], leds=[];
+  dirs.forEach(([sx,sz])=>{
+    const mx=sx*aLen/Math.SQRT2, mz=sz*aLen/Math.SQRT2, front=(sz<0);
+    const arm=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.12,aLen,16),matArm);arm.castShadow=true;   // tapered arm
+    arm.position.set(mx/2,0,mz/2);arm.lookAt(new THREE.Vector3(mx,0,mz));arm.rotateX(Math.PI/2);drone.add(arm);
+    const motor=new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.26,0.34,20),matMotor);motor.position.set(mx,0.16,mz);motor.castShadow=true;drone.add(motor);
+    const bell=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.13,0.1,16),matDark);bell.position.set(mx,0.36,mz);drone.add(bell);
+    const trim=new THREE.Mesh(new THREE.TorusGeometry(0.2,0.02,8,24),matAccent);trim.rotation.x=Math.PI/2;trim.position.set(mx,0.3,mz);drone.add(trim);   // glowing motor-pod trim
+    const ledMat=new THREE.MeshStandardMaterial({color:front?0xff4d3d:0x36d15a,emissive:front?0xff2a1a:0x18c24a,emissiveIntensity:1.1});
+    ledMat.userData.base=front?0xff2a1a:0x18c24a;   // nav-light base (front red / rear green) to restore after any override
+    const led=new THREE.Mesh(new THREE.SphereGeometry(0.09,12,12),ledMat);led.position.set(mx+sx*0.28,0.16,mz+sz*0.28);drone.add(led);leds.push(ledMat);
+    const prop=new THREE.Group();prop.position.set(mx,0.42,mz);
+    prop.add(new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.08,12),matMotor));
+    for(let b=0;b<2;b++){const blade=new THREE.Mesh(new THREE.BoxGeometry(1.55,0.03,0.16),matBlade);
+      blade.rotation.y=b*Math.PI;blade.geometry.translate(0.7,0,0);blade.castShadow=true;prop.add(blade);}
+    prop.userData.dir=front?1:-1;props.push(prop);drone.add(prop);
+  });
+
+  const gimbal=new THREE.Group();gimbal.position.set(0,-0.28,-1.02);
+  const yoke=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.34,0.4),matBody);yoke.castShadow=true;gimbal.add(yoke);
+  const lens=new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.17,0.16,20),matLens);lens.rotation.x=Math.PI/2;lens.position.z=-0.22;gimbal.add(lens);drone.add(gimbal);
+  [-0.72,0.72].forEach(sx=>{
+    const rail=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.12,1.9),matDark);rail.position.set(sx,-0.95,0);rail.castShadow=true;drone.add(rail);
+    [-0.55,0.55].forEach(sz=>{const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.72,10),matDark);leg.position.set(sx,-0.6,sz);drone.add(leg);});
+  });
+
+  const crate=new THREE.Group();const box=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),matCrate);box.castShadow=true;crate.add(box);crate.visible=false;drone.add(crate);
+
+  addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+
+  const clock=new THREE.Clock();let last=0;
+  (function loop(){
+    requestAnimationFrame(loop);
+    const t=clock.getElapsedTime();let dt=t-last;last=t;if(dt>0.05)dt=0.05;
+
+    if(MODE==='reg'){
+      // FIT-QUALITY -> PHYSICS: drone applies the user's predicted throttle; true need = 0.088*payload+45.5
+      const load=PAYLOAD/450;
+      const applied=M*PAYLOAD+C, required=0.088*PAYLOAD+45.5;
+      const maxed=applied>THROTTLE_CEIL, underpowered=applied<required-4, crashing=maxed||underpowered;
+      regDrop+=((crashing?1:0)-regDrop)*Math.min(1,dt*2.5);   // eased hover<->crash so live slider fixes recover
+      const spin=(0.7+load*1.6)*(1-regDrop)+0.05*regDrop;
+      props.forEach(p=>p.rotation.y+=p.userData.dir*spin);
+      drone.position.x=0;
+      drone.position.y=(Math.sin(t*1.3)*0.06-load*0.35)*(1-regDrop)+(-1.0)*regDrop;
+      drone.rotation.z=Math.sin(t*0.9)*0.015*(1-regDrop)+regDrop*Math.sin(t*7)*0.12;drone.rotation.x=0;
+      if(PAYLOAD>8){crate.visible=true;const s=0.35+load*0.9;box.scale.set(s,s,s);box.position.y=-1.35-s*0.4;}else crate.visible=false;
+      if(crashing){const f=(Math.sin(t*10)>0)?1.4:0.2;leds.forEach(m=>{m.emissive.setHex(0xff2a1a);m.emissiveIntensity=f;});}
+      else leds.forEach(m=>{m.emissive.setHex(m.userData.base);m.emissiveIntensity=1.1;});   // restore nav lights
+      curThrottle=Math.max(0,Math.min(100,applied))*(1-regDrop);
+      const st=document.getElementById('regStatus');
+      if(st){if(maxed){st.textContent='MOTORS MAXED';st.style.color='#ff6a4c';}
+        else if(underpowered){st.textContent='UNDERPOWERED — CRASHING';st.style.color='#ff6a4c';}
+        else{st.textContent='HOVERING';st.style.color='#5ad18a';}}
+
+    } else {
+      crate.visible=false;
+      const windForce=windLevel*0.9;   // steady sideways disturbance (blows +x), distinct from the one-off gust
+      rollVel+=(Math.sin(t*2.1)+Math.sin(t*0.7))*0.06*dt;
+      rollVel+=windForce*dt;
+      if(STAB&&!crashed) rollVel+=(-9.0*roll-4.0*rollVel)*dt;   // ML holds a small steady lean = windForce/9
+      else rollVel+=(-0.25*rollVel)*dt;                         // ML off: wind integrates -> drifts over & crashes
+      roll+=rollVel*dt;
+      if(!STAB&&Math.abs(roll)>1.2&&!crashed){crashed=true;crashT=t;}
+      const spin=crashed?Math.max(0,2.2-(t-crashT)*1.5):(STAB?1.25:1.05);
+      props.forEach(p=>p.rotation.y+=p.userData.dir*spin);
+      curThrottle=Math.max(0,Math.min(100,spin*41));
+      if(crashed){
+        drone.position.y+=(-4.0)*dt*Math.min(1,(t-crashT));slideX+=Math.sin(roll)*2.5*dt;
+        if(drone.position.y<-1.0)drone.position.y=-1.0;
+        if(t-crashT>2.2){roll=0;rollVel=0;crashed=false;slideX=0;drone.position.set(0,0,0);}
+      }else{drone.position.y=Math.sin(t*1.3)*0.05;slideX+=Math.sin(roll)*1.2*dt;slideX*=0.985;drone.position.x=slideX;}
+      drone.rotation.z=roll;drone.rotation.x=0;
+      const bad=!STAB;leds.forEach(m=>{m.emissive.setHex(bad?0xff2a1a:0x18c24a);m.emissiveIntensity=bad?((Math.sin(t*12)>0)?1.4:0.3):1.1;});
+      tiltBuf.push(roll*180/Math.PI);if(tiltBuf.length>TILT_N)tiltBuf.shift();drawTilt();
+      const deg=Math.abs(roll*180/Math.PI);
+      if(STAB){verdict.style.color='#5ad18a';verdict.textContent=deg<6?'✔ Holding level — corrections cancel every gust.':'Correcting… watch it snap back to level.';}
+      else if(crashed){verdict.style.color='#ff6a4c';verdict.textContent='💥 Tumbled. No model, no recovery. Turn ML on.';}
+      else{verdict.style.color='#e0784b';verdict.textContent=deg>25?'Tilting hard — nothing is stopping it…':'One gust from disaster (ML is off).';}
+    }
+    // instrument cluster: ease RPM toward throttle-mapped target (hover 45%≈3000, ceiling≈9000 redline)
+    const targetRPM=Math.max(0,Math.min(9000,116*(curThrottle-45)+3000));
+    tachRPM+=(targetRPM-tachRPM)*Math.min(1,dt*5);
+    drawTach(tachRPM);drawWind();
+    controls.update();renderer.render(scene,camera);
+  })();
+}
+</script>
+</body>
+</html>
