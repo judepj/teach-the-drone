@@ -145,11 +145,11 @@
   </div>
   <div class="row">
     <label>start&nbsp;c</label>
-    <input id="mcSlider" type="range" min="35" max="58" step="0.5" value="55">
-    <span class="val start" id="mcVal">55.0</span>
+    <input id="mcSlider" type="range" min="35" max="58" step="0.5" value="47">
+    <span class="val start" id="mcVal">47.0</span>
   </div>
   <div class="meterWrap">
-    <div class="lbl"><span>fit error (green unlocks launch)</span><b id="missErrNum">–</b></div>
+    <div class="lbl"><span>fit error (green = a good model)</span><b id="missErrNum">–</b></div>
     <div class="meterBar"><div class="meterFill" id="missFill"></div></div>
   </div>
   <div style="display:flex;gap:12px;align-items:center;margin:10px 0 2px;">
@@ -172,7 +172,7 @@
   <div id="missNote" class="note"></div>
   <div id="missStatus" style="margin-top:7px;font-size:14px;font-weight:800;letter-spacing:.4px;color:#9aa6b3;">READY ON PAD A</div>
   <div class="btns">
-    <button id="launchBtn" class="primary" disabled>🚀 Launch</button>
+    <button id="launchBtn" class="primary">🚀 Launch</button>
     <button id="missResetBtn">Reset to A</button>
   </div>
 </div>
@@ -245,18 +245,18 @@ const tiltBuf=[]; const TILT_N=150;
 let regDrop=0, windLevel=0, tachRPM=3000, curThrottle=45, windCleared=false, regWasCrashing=false;
 
 // ---- MISSION (Game 1: A->B) : own model state — never touches Regression's M/C ----
-let mM=0.050, mC=55;                       // mission-scoped slope/start (independent sliders)
+let mM=0.050, mC=47;                       // mission opens with a deliberately UNFIT model (in the error zone)
 const MISS_MW=430;                         // fixed heavy cargo (g): BEYOND the 290 g tested => extrapolation
 const MISS_REQ=BEST.m*MISS_MW+BEST.c;      // hidden true current the cargo actually needs (~82.6)
 // Flight constants. Difficulty is a visual judgment (see plan) — tune freely.
-//  under-model (line too low => applied < Wg) can't lift => stays green-locked on pad A;
+//  under-model (applied < Wg) strains but can't lift => quick UNDER-THRUST fail (learn by crashing);
 //  a good fit lifts with margin and lands on B; a higher line burns more current (idle floor) => thinner battery.
 const MISS={ GRAV:0.90, KA:0.05, HACC:3.0, HDRAG:1.1, IDLE:0.80, DRAIN:0.11,
              ALT:2.2, XA:-7.0, XB:7.0, VHARD:2.8, TGREEN:2.2, BATT0:100,
              GROUNDY:-2.45, ORIGIN0:-1.49 };
 let missPhase='tune';                      // 'tune' | 'flying' | 'won' | 'lost'
 let missApplied=0, missWg=MISS_REQ*MISS.GRAV;   // locked at LAUNCH
-let missX=MISS.XA, missY=0, missVX=0, missVY=0, missTau=0, missBatt=MISS.BATT0, missFlown=false, missCurrent=0;
+let missX=MISS.XA, missY=0, missVX=0, missVY=0, missTau=0, missBatt=MISS.BATT0, missFlown=false, missCurrent=0, missUpT=0;
 const missKeys={up:false,left:false,right:false};
 
 // ---- PREDICT (Game 2: classify) : own boundary state — never touches Regression's M/C ----
@@ -565,10 +565,10 @@ const STEP_REG='Every extra gram needs more throttle to hover. You have <b>7 tes
 const STEP_STAB='A drone can\'t stay level on its own. Turn the <b>ML stabilizer</b> off, hit a '+
   '<b>gust</b>, watch it tumble. Turn it on: it senses tilt and corrects 60×/second. That '+
   '<b>sense → correct</b> rule is what a model learns.';
-const STEP_MISS='<b>Mission:</b> your line predicts the <b>current</b> a cargo needs. Fit the '+
-  '<b>7 bench flights</b> until the bowl goes <b>green</b>, then <b>LAUNCH</b> and hand-fly the '+
-  '430&nbsp;g crate from pad&nbsp;A to pad&nbsp;B. Hold <b>Up/Space</b> to climb, <b>←/→</b> to move. '+
-  'A weak line can\'t lift; a greedy line drains the battery before B.';
+const STEP_MISS='<b>Mission:</b> your line predicts the <b>current</b> a cargo needs. The starting '+
+  'model is a <b>guess</b> — <b>LAUNCH</b> it and watch it fail, then fit the <b>7 bench flights</b> '+
+  'until the bowl goes <b>green</b> and fly the 430&nbsp;g crate from pad&nbsp;A to pad&nbsp;B. '+
+  'Hold <b>Up/Space</b> to climb, <b>←/→</b> to move. Too little current can\'t lift; too much drains the battery before B.';
 const STEP_PRED='<b>Predict a category:</b> will a takeoff <b>survive</b> or <b>crash</b>? Each dot is '+
   'a past autonomous flight — <b>green safe, red crash</b> — set by wind &amp; rain. Drag the '+
   '<b>boundary</b> to split the colours, then hit <b>New takeoff</b>: your model forecasts the '+
@@ -621,9 +621,8 @@ function refreshMiss(){
   $('missFill').style.width=(good*100).toFixed(0)+'%';
   $('missFill').style.background= green?'#5ad18a':`hsl(${good*90},70%,50%)`;
   const ap=mM*MISS_MW+mC; $('missPred').textContent=ap.toFixed(1);
-  if(missPhase==='tune') $('launchBtn').disabled=!green;
   if(green) $('missNote').innerHTML=`<b>Green — good fit.</b> Line predicts <b>${ap.toFixed(0)} A</b> for the ${MISS_MW} g cargo. Hit <b>LAUNCH</b>, then <b>Up/Space</b> to climb and <b>→</b> for pad B.`;
-  else $('missNote').innerHTML=`Drag <b>slope</b> and <b>start</b> until the line runs through the <b>${DATA.length} dots</b> and the bowl turns <span style="color:#5ad18a">green</span>. Launch stays locked until then.`;
+  else $('missNote').innerHTML=`Drag <b>slope</b> and <b>start</b> until the line runs through the <b>${DATA.length} dots</b> and the bowl turns <span style="color:#5ad18a">green</span>. You can <b>LAUNCH any model</b> — a poor fit will crash; try it, then fix it.`;
   drawBowl();
   if(MODE==='mission'&&missPhase!=='flying')drawChart();
 }
@@ -654,16 +653,16 @@ function addMissKeys(){addEventListener('keydown',missKeyDown);addEventListener(
 function removeMissKeys(){removeEventListener('keydown',missKeyDown);removeEventListener('keyup',missKeyUp);
   missKeys.up=missKeys.left=missKeys.right=false;}
 function missResetToTune(){
-  missPhase='tune';missX=MISS.XA;missY=0;missVX=0;missVY=0;missTau=0;missBatt=MISS.BATT0;missFlown=false;missCurrent=0;
-  removeMissKeys(); mmS.disabled=false;mcS.disabled=false;
+  missPhase='tune';missX=MISS.XA;missY=0;missVX=0;missVY=0;missTau=0;missBatt=MISS.BATT0;missFlown=false;missCurrent=0;missUpT=0;
+  removeMissKeys(); mmS.disabled=false;mcS.disabled=false;$('launchBtn').disabled=false;
   refreshMiss();updateMissHUD();
 }
 $('missResetBtn').onclick=()=>{missResetToTune();verdict.textContent='';};
 $('launchBtn').onclick=()=>{
-  if(missPhase!=='tune'||fitError(mM,mC)>=MISS.TGREEN)return;
+  if(missPhase!=='tune')return;                        // any model is flyable now — a bad one just crashes
   missApplied=mM*MISS_MW+mC; missWg=MISS_REQ*MISS.GRAV;
-  missPhase='flying'; missX=MISS.XA;missY=0;missVX=0;missVY=0;missTau=0;missBatt=MISS.BATT0;missFlown=false;
-  mmS.disabled=true;mcS.disabled=true; $('launchBtn').disabled=true;
+  missPhase='flying'; missX=MISS.XA;missY=0;missVX=0;missVY=0;missTau=0;missBatt=MISS.BATT0;missFlown=false;missUpT=0;
+  mmS.disabled=true;mcS.disabled=true;
   if(window._missionView)window._missionView(true);   // snap back to a clean side view
   addMissKeys(); verdict.textContent='';
 };
@@ -919,6 +918,9 @@ function main(){
         missVX*=(1-MISS.HDRAG*dt); if(missY<=0.05)missVX*=0.9;   // no ground skid
         missX+=missVX*dt; missY+=missVY*dt;
         if(missY>1.0)missFlown=true;
+        if(missKeys.up)missUpT+=dt;                                  // time spent commanding thrust
+        if(missUpT>2.2&&missApplied<missWg)missEnd(false,            // applied<Wg => can NEVER lift, no matter the pilot
+          `❌ Not enough thrust — your line predicts only <b>${missApplied.toFixed(0)} A</b>, too little to lift the ${MISS_MW} g cargo (a good model needs about <b>${MISS_REQ.toFixed(0)} A</b> — the green basin). The motors max out but can't beat the weight. Raise the line and relaunch.`);
         missCurrent=missApplied*(MISS.IDLE+(1-MISS.IDLE)*missTau);   // props never fully idle => floor ∝ applied
         missBatt-=missCurrent*dt*MISS.DRAIN;
         if(missBatt<=0){missBatt=0;missEnd(false, missFlown
